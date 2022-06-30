@@ -1,22 +1,19 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<project xmlns="http://maven.apache.org/POM/4.0.0"
-         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+<?xml version="1.0" encoding="utf-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
-
     <groupId>com.amazonaws</groupId>
     <artifactId>aws-athena-query-federation</artifactId>
     <packaging>pom</packaging>
-    <version>1.1.6</version>
+    <version>2022.24.1</version>
     <name>AWS Athena Query Federation</name>
     <description>The Amazon Athena Query Federation SDK allows you to customize Amazon Athena with your own code.</description>
     <url>https://github.com/awslabs/aws-athena-query-federation</url>
     <properties>
-        <maven.compiler.source>1.8</maven.compiler.source>
-        <maven.compiler.target>1.8</maven.compiler.target>
+        <maven.compiler.source>11</maven.compiler.source>
+        <maven.compiler.target>11</maven.compiler.target>
         <aws-sdk.version>1.11.800</aws-sdk.version>
-        <aws-athena-federation-sdk.version>2021.42.1</aws-athena-federation-sdk.version>
         <aws.lambda-java-core.version>1.2.0</aws.lambda-java-core.version>
+        <aws.lambda-java-log4j2.version>1.5.1</aws.lambda-java-log4j2.version>
         <slf4j-log4j.version>1.7.28</slf4j-log4j.version>
         <mockito.version>1.10.19</mockito.version>
         <junit.version>4.13.1</junit.version>
@@ -24,15 +21,13 @@
         <fasterxml.jackson.version>2.10.5</fasterxml.jackson.version>
         <aws-cdk.version>1.89.0</aws-cdk.version>
         <surefire.failsafe.version>3.0.0-M5</surefire.failsafe.version>
+        <log4j2Version>2.17.1</log4j2Version>
     </properties>
-
     <organization>
         <name>Amazon Web Services</name>
         <url>https://https://aws.amazon.com//</url>
     </organization>
-
     <inceptionYear>2019</inceptionYear>
-
     <licenses>
         <license>
             <name>Apache License 2.0</name>
@@ -40,7 +35,6 @@
             <distribution>repo</distribution>
         </license>
     </licenses>
-
     <developers>
         <developer>
             <id>amazonwebservices</id>
@@ -51,13 +45,11 @@
             </roles>
         </developer>
     </developers>
-
     <scm>
         <connection>scm:git@github.com:awslabs/aws-athena-query-federation.git</connection>
         <url>https://github.com/awslabs/aws-athena-query-federation</url>
         <tag>HEAD</tag>
     </scm>
-
     <modules>
         <module>athena-cloudwatch</module>
         <module>athena-docdb</module>
@@ -72,21 +64,33 @@
         <module>athena-tpcds</module>
         <module>athena-jdbc</module>
         <module>athena-federation-sdk-tools</module>
+        <module>athena-mysql</module>
+        <module>athena-postgresql</module>
+        <module>athena-redshift</module>
         <module>athena-udfs</module>
         <module>athena-vertica</module>
         <module>athena-timestream</module>
         <module>athena-neptune</module>
         <module>athena-federation-integ-test</module>
+        <module>athena-google-bigquery</module>
+        <module>athena-oracle</module>
+        <module>athena-sqlserver</module>
+        <module>athena-synapse</module>
+        <module>athena-datalakegen2</module>
+        <module>athena-snowflake</module>
+        <module>athena-teradata</module>
+        <module>athena-saphana</module>
+        <module>athena-cloudera-hive</module>
+        <module>athena-cloudera-impala</module>
+        <module>athena-hortonworks-hive</module>
         <module>athena-deltalake</module>
     </modules>
-
     <dependencies>
         <dependency>
             <groupId>com.amazonaws</groupId>
             <artifactId>aws-lambda-java-core</artifactId>
             <version>${aws.lambda-java-core.version}</version>
         </dependency>
-
         <dependency>
             <groupId>junit</groupId>
             <artifactId>junit</artifactId>
@@ -107,7 +111,6 @@
             <scope>test</scope>
         </dependency>
     </dependencies>
-
     <build>
         <plugins>
             <plugin>
@@ -135,7 +138,6 @@
                     </execution>
                 </executions>
             </plugin>
-
             <plugin>
                 <groupId>org.jacoco</groupId>
                 <artifactId>jacoco-maven-plugin</artifactId>
@@ -156,7 +158,6 @@
                     </execution>
                 </executions>
             </plugin>
-
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-checkstyle-plugin</artifactId>
@@ -178,7 +179,6 @@
                     </execution>
                 </executions>
             </plugin>
-
             <plugin>
                 <groupId>org.codehaus.mojo</groupId>
                 <artifactId>license-maven-plugin</artifactId>
@@ -205,7 +205,6 @@
                     </execution>
                 </executions>
             </plugin>
-
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
@@ -235,7 +234,6 @@
                     </includes>
                 </configuration>
             </plugin>
-
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-javadoc-plugin</artifactId>
@@ -247,7 +245,6 @@
             </plugin>
         </plugins>
     </build>
-
     <profiles>
         <profile>
             <id>release</id>

@@ -10,7 +10,7 @@ Metadata:
     Labels:
       - athena-federation
     HomePageUrl: 'https://github.com/awslabs/aws-athena-query-federation'
-    SemanticVersion: 2021.42.1
+    SemanticVersion: 2022.24.1
     SourceCodeUrl: 'https://github.com/awslabs/aws-athena-query-federation'
 Parameters:
   AthenaCatalogName:
@@ -46,10 +46,10 @@ Resources:
           spill_bucket: !Ref SpillBucket
           spill_prefix: !Ref SpillPrefix
       FunctionName: !Ref AthenaCatalogName
-      Handler: "com.amazonaws.connectors.timestream.TimestreamCompositeHandler"
-      CodeUri: "./target/athena-timestream-2021.42.1.jar"
+      Handler: "com.amazonaws.athena.connectors.timestream.TimestreamCompositeHandler"
+      CodeUri: "./target/athena-timestream-2022.24.1.jar"
       Description: "Enables Amazon Athena to communicate with Amazon Timestream, making your time series data accessible from Athena."
-      Runtime: java8
+      Runtime: java11
       Timeout: !Ref LambdaTimeout
       MemorySize: !Ref LambdaMemory
       Policies:

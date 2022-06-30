@@ -1,38 +1,26 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<project xmlns="http://maven.apache.org/POM/4.0.0"
-         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
-
+<?xml version="1.0" encoding="utf-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
-
     <parent>
         <groupId>com.amazonaws</groupId>
         <artifactId>aws-athena-query-federation</artifactId>
-        <version>1.1.6</version>
+        <version>2022.24.1</version>
     </parent>
-
     <groupId>com.amazonaws</groupId>
     <artifactId>aws-athena-federation-sdk</artifactId>
-    <version>${aws-athena-federation-sdk.version}</version>
+    <version>2022.24.1</version>
     <packaging>jar</packaging>
     <name>Amazon Athena Query Federation SDK</name>
     <description>The Athena Query Federation SDK defines a set of interfaces and wire protocols that you can implement to enable Athena to delegate portions of it's query execution plan to code that you deploy/write.</description>
     <url>https://github.com/awslabs/aws-athena-query-federation</url>
-
     <properties>
-        <maven.compiler.source>1.8</maven.compiler.source>
-        <maven.compiler.target>1.8</maven.compiler.target>
         <slf4jVersion>1.7.30</slf4jVersion>
-        <log4j2Version>2.13.3</log4j2Version>
     </properties>
-
     <organization>
         <name>Amazon Web Services</name>
         <url>https://https://aws.amazon.com//</url>
     </organization>
-
     <inceptionYear>2019</inceptionYear>
-
     <licenses>
         <license>
             <name>Apache License 2.0</name>
@@ -40,7 +28,6 @@
             <distribution>repo</distribution>
         </license>
     </licenses>
-
     <dependencies>
         <dependency>
             <groupId>com.amazonaws</groupId>
@@ -123,7 +110,7 @@
         <dependency>
             <groupId>com.amazonaws</groupId>
             <artifactId>aws-lambda-java-log4j2</artifactId>
-            <version>1.1.0</version>
+            <version>${aws.lambda-java-log4j2.version}</version>
             <scope>test</scope>
         </dependency>
         <dependency>
@@ -161,7 +148,6 @@
             <version>3.9</version>
         </dependency>
     </dependencies>
-
     <build>
         <plugins>
             <plugin>
@@ -185,11 +171,10 @@
                     </execution>
                 </executions>
             </plugin>
-
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-shade-plugin</artifactId>
-                <version>3.1.1</version>
+                <version>3.2.1</version>
                 <configuration>
                     <shadedArtifactAttached>true</shadedArtifactAttached>
                     <filters>
@@ -204,9 +189,8 @@
                     </filters>
                     <transformers>
                         <!-- This transformer is here to concatenate log4j2 cache during shading -->
-                        <transformer
-                                implementation="com.github.edwgiz.mavenShadePlugin.log4j2CacheTransformer.PluginsCacheFileTransformer">
-                        </transformer>
+                        <transformer implementation="com.github.edwgiz.mavenShadePlugin.log4j2CacheTransformer.PluginsCacheFileTransformer">
+</transformer>
                     </transformers>
                 </configuration>
                 <dependencies>
@@ -249,7 +233,6 @@
                     </execution>
                 </executions>
             </plugin>
-
             <plugin>
                 <groupId>org.codehaus.mojo</groupId>
                 <artifactId>license-maven-plugin</artifactId>

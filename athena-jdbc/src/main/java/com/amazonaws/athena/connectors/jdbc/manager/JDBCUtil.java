@@ -21,11 +21,6 @@ package com.amazonaws.athena.connectors.jdbc.manager;
 
 import com.amazonaws.athena.connectors.jdbc.connection.DatabaseConnectionConfig;
 import com.amazonaws.athena.connectors.jdbc.connection.DatabaseConnectionConfigBuilder;
-import com.amazonaws.athena.connectors.jdbc.connection.JdbcConnectionFactory;
-import com.amazonaws.athena.connectors.jdbc.mysql.MySqlMetadataHandler;
-import com.amazonaws.athena.connectors.jdbc.mysql.MySqlRecordHandler;
-import com.amazonaws.athena.connectors.jdbc.postgresql.PostGreSqlMetadataHandler;
-import com.amazonaws.athena.connectors.jdbc.postgresql.PostGreSqlRecordHandler;
 import com.google.common.collect.ImmutableMap;
 import org.apache.commons.lang3.Validate;
 
@@ -36,41 +31,44 @@ public final class JDBCUtil
 {
     private static final String DEFAULT_CATALOG_PREFIX = "lambda:";
     private static final String LAMBDA_FUNCTION_NAME_PROPERTY = "AWS_LAMBDA_FUNCTION_NAME";
+
     private JDBCUtil() {}
 
     /**
      * Extracts default database configuration for a database. Used when a specific database instance handler is used by Lambda function.
      *
-     * @param databaseEngine database type. See {@link JdbcConnectionFactory.DatabaseEngine}.
+     * @param databaseEngine database type.
      * @return database connection confuiguration. See {@link DatabaseConnectionConfig}.
      */
-    public static DatabaseConnectionConfig getSingleDatabaseConfigFromEnv(final JdbcConnectionFactory.DatabaseEngine databaseEngine)
+    public static DatabaseConnectionConfig getSingleDatabaseConfigFromEnv(final String databaseEngine)
     {
-        List<DatabaseConnectionConfig> databaseConnectionConfigs = DatabaseConnectionConfigBuilder.buildFromSystemEnv();
+        List<DatabaseConnectionConfig> databaseConnectionConfigs = DatabaseConnectionConfigBuilder.buildFromSystemEnv(databaseEngine);
 
         for (DatabaseConnectionConfig databaseConnectionConfig : databaseConnectionConfigs) {
             if (DatabaseConnectionConfigBuilder.DEFAULT_CONNECTION_STRING_PROPERTY.equals(databaseConnectionConfig.getCatalog())
-                    && databaseEngine.equals(databaseConnectionConfig.getType())) {
+                    && databaseEngine.equals(databaseConnectionConfig.getEngine())) {
                 return databaseConnectionConfig;
             }
         }
 
         throw new RuntimeException(String.format("Must provide default connection string parameter %s for database type %s",
-                DatabaseConnectionConfigBuilder.DEFAULT_CONNECTION_STRING_PROPERTY, databaseEngine.getDbName()));
+                DatabaseConnectionConfigBuilder.DEFAULT_CONNECTION_STRING_PROPERTY, databaseEngine));
     }
 
     /**
      * Creates a map of Catalog to respective metadata handler to be used by Multiplexer.
      *
      * @param properties system properties.
+     * @param metadataHandlerFactory factory for creating the appropriate metadata handler for the database type
      * @return Map of String -> {@link JdbcMetadataHandler}
      */
-    public static Map<String, JdbcMetadataHandler> createJdbcMetadataHandlerMap(final Map<String, String> properties)
+    public static Map<String, JdbcMetadataHandler> createJdbcMetadataHandlerMap(
+            final Map<String, String> properties, JdbcMetadataHandlerFactory metadataHandlerFactory)
     {
         ImmutableMap.Builder<String, JdbcMetadataHandler> metadataHandlerMap = ImmutableMap.builder();
 
         final String functionName = Validate.notBlank(properties.get(LAMBDA_FUNCTION_NAME_PROPERTY), "Lambda function name not present in environment.");
-        List<DatabaseConnectionConfig> databaseConnectionConfigs = new DatabaseConnectionConfigBuilder().properties(properties).build();
+        List<DatabaseConnectionConfig> databaseConnectionConfigs = new DatabaseConnectionConfigBuilder().engine(metadataHandlerFactory.getEngine()).properties(properties).build();
 
         if (databaseConnectionConfigs.isEmpty()) {
             throw new RuntimeException("At least one connection string required.");
@@ -79,7 +77,7 @@ public final class JDBCUtil
         boolean defaultPresent = false;
 
         for (DatabaseConnectionConfig databaseConnectionConfig : databaseConnectionConfigs) {
-            JdbcMetadataHandler jdbcMetadataHandler = createJdbcMetadataHandler(databaseConnectionConfig);
+            JdbcMetadataHandler jdbcMetadataHandler = metadataHandlerFactory.createJdbcMetadataHandler(databaseConnectionConfig);
             metadataHandlerMap.put(databaseConnectionConfig.getCatalog(), jdbcMetadataHandler);
 
             if (DatabaseConnectionConfigBuilder.DEFAULT_CONNECTION_STRING_PROPERTY.equals(databaseConnectionConfig.getCatalog())) {
@@ -95,31 +93,19 @@ public final class JDBCUtil
         return metadataHandlerMap.build();
     }
 
-    private static JdbcMetadataHandler createJdbcMetadataHandler(final DatabaseConnectionConfig databaseConnectionConfig)
-    {
-        switch (databaseConnectionConfig.getType()) {
-            case MYSQL:
-                return new MySqlMetadataHandler(databaseConnectionConfig);
-            case REDSHIFT:
-            case POSTGRES:
-                return new PostGreSqlMetadataHandler(databaseConnectionConfig);
-            default:
-                throw new RuntimeException("Mux: Unhandled database engine " + databaseConnectionConfig.getType());
-        }
-    }
-
     /**
      * Creates a map of Catalog to respective record handler to be used by Multiplexer.
      *
      * @param properties system properties.
+     * @param jdbcRecordHandlerFactory
      * @return Map of String -> {@link JdbcRecordHandler}
      */
-    public static Map<String, JdbcRecordHandler> createJdbcRecordHandlerMap(final Map<String, String> properties)
+    public static Map<String, JdbcRecordHandler> createJdbcRecordHandlerMap(final Map<String, String> properties, JdbcRecordHandlerFactory jdbcRecordHandlerFactory)
     {
         ImmutableMap.Builder<String, JdbcRecordHandler> recordHandlerMap = ImmutableMap.builder();
 
         final String functionName = Validate.notBlank(properties.get(LAMBDA_FUNCTION_NAME_PROPERTY), "Lambda function name not present in environment.");
-        List<DatabaseConnectionConfig> databaseConnectionConfigs = new DatabaseConnectionConfigBuilder().properties(properties).build();
+        List<DatabaseConnectionConfig> databaseConnectionConfigs = new DatabaseConnectionConfigBuilder().engine(jdbcRecordHandlerFactory.getEngine()).properties(properties).build();
 
         if (databaseConnectionConfigs.isEmpty()) {
             throw new RuntimeException("At least one connection string required.");
@@ -128,7 +114,7 @@ public final class JDBCUtil
         boolean defaultPresent = false;
 
         for (DatabaseConnectionConfig databaseConnectionConfig : databaseConnectionConfigs) {
-            JdbcRecordHandler jdbcRecordHandler = createJdbcRecordHandler(databaseConnectionConfig);
+            JdbcRecordHandler jdbcRecordHandler = jdbcRecordHandlerFactory.createJdbcRecordHandler(databaseConnectionConfig);
             recordHandlerMap.put(databaseConnectionConfig.getCatalog(), jdbcRecordHandler);
 
             if (DatabaseConnectionConfigBuilder.DEFAULT_CONNECTION_STRING_PROPERTY.equals(databaseConnectionConfig.getCatalog())) {
@@ -142,18 +128,5 @@ public final class JDBCUtil
         }
 
         return recordHandlerMap.build();
-    }
-
-    private static JdbcRecordHandler createJdbcRecordHandler(final DatabaseConnectionConfig databaseConnectionConfig)
-    {
-        switch (databaseConnectionConfig.getType()) {
-            case MYSQL:
-                return new MySqlRecordHandler(databaseConnectionConfig);
-            case REDSHIFT:
-            case POSTGRES:
-                return new PostGreSqlRecordHandler(databaseConnectionConfig);
-            default:
-                throw new RuntimeException("Mux: Unhandled database engine " + databaseConnectionConfig.getType());
-        }
     }
 }
