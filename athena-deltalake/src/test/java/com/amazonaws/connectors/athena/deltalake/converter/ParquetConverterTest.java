@@ -47,6 +47,9 @@ import static org.junit.Assert.*;
 
 public class ParquetConverterTest {
 
+//    @Test
+//    public void testFactories
+
     @Test
     public void testExtractors() throws Exception {
         List<Type> fields = Arrays.asList(

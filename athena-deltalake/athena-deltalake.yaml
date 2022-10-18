@@ -10,7 +10,7 @@ Metadata:
     ReadmeUrl: README.md
     Labels: ['athena-federation']
     HomePageUrl: https://github.com/awslabs/aws-athena-query-federation
-    SemanticVersion: 2021.21.1
+    SemanticVersion: 2021.22.23
     SourceCodeUrl: https://github.com/awslabs/aws-athena-query-federation
 
 Parameters:
@@ -45,6 +45,7 @@ Resources:
   ConnectorConfig:
     Type: 'AWS::Serverless::Function'
     Properties:
+      AutoPublishAlias: live
       Environment:
         Variables:
           disable_spill_encryption: !Ref DisableSpillEncryption
@@ -53,20 +54,9 @@ Resources:
           data_bucket: !Ref DataBucket
       FunctionName: !Sub "${AthenaCatalogName}"
       Handler: "com.amazonaws.connectors.athena.deltalake.DeltalakeCompositeHandler"
-      CodeUri: "./target/athena-deltalake-1.1.jar"
+      CodeUri: "./target/athena-deltalake-2022.24.1.jar"
       Description: "Enables Amazon Athena to query Delta Lake tables stored in S3."
-      Runtime: java8
+      Runtime: java11
       Timeout: !Ref LambdaTimeout
       MemorySize: !Ref LambdaMemory
-      Policies:
-        - Statement:
-            - Action:
-                - athena:GetQueryExecution
-                - s3:ListAllMyBuckets
-              Effect: Allow
-              Resource: '*'
-          Version: '2012-10-17'
-        - S3CrudPolicy:
-            BucketName: !Ref SpillBucket
-        - S3CrudPolicy:
-            BucketName: !Ref DataBucket
+      Role: arn:aws:iam::400535189829:role/rafalslo-event-deltalake-query-federation

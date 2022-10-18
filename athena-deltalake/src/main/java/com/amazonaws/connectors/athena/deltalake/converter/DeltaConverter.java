@@ -7,9 +7,9 @@
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- * 
+ *
  *      http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -171,14 +171,16 @@ public class DeltaConverter {
                     JsonNode valueType = fieldType.get("valueType");
                     boolean valueNullable = fieldType.get("valueContainsNull").asBoolean();
                     boolean keyNullable = false;
-                    String keyName = fieldName + ".key";
-                    String valueName = fieldName + ".value";
-                    Field keyField = getAvroField(keyType, keyName, keyNullable);
-                    Field valueField = getAvroField(valueType, valueName, valueNullable);
+                    Field keyField = getAvroField(keyType, "key", keyNullable);
+                    Field valueField = getAvroField(valueType, "value", valueNullable);
+                    Field entriesStructField = new Field(
+                        "entries",
+                        new FieldType(false, Types.MinorType.STRUCT.getType(), null),
+                        Arrays.asList(keyField, valueField));
                     return new Field(
                             fieldName,
                             new FieldType(fieldNullable, new ArrowType.Map(true), null),
-                            Arrays.asList(keyField, valueField));
+                            Arrays.asList(entriesStructField));
             }
         }
         throw new UnsupportedOperationException("Unsupported field type: " + fieldType.toString());

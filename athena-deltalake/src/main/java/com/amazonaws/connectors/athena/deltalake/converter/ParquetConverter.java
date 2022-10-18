@@ -19,16 +19,31 @@
  */
 package com.amazonaws.connectors.athena.deltalake.converter;
 
+import com.amazonaws.athena.connector.lambda.data.BlockUtils;
+import com.amazonaws.athena.connector.lambda.data.FieldResolver;
 import com.amazonaws.athena.connector.lambda.data.writers.extractors.*;
+import com.amazonaws.athena.connector.lambda.data.writers.fieldwriters.FieldWriter;
+import com.amazonaws.athena.connector.lambda.data.writers.fieldwriters.FieldWriterFactory;
 import com.amazonaws.athena.connector.lambda.data.writers.holders.NullableVarBinaryHolder;
+import com.amazonaws.athena.connector.lambda.domain.predicate.ConstraintProjector;
+import com.google.common.base.Charsets;
 import com.google.common.primitives.Ints;
 import com.google.common.primitives.Longs;
+import java.util.Map;
+import org.apache.arrow.memory.ArrowBuf;
+import org.apache.arrow.vector.FieldVector;
+import org.apache.arrow.vector.complex.ListVector;
+import org.apache.arrow.vector.complex.MapVector;
+import org.apache.arrow.vector.complex.impl.UnionListWriter;
+import org.apache.arrow.vector.complex.impl.UnionMapWriter;
+import org.apache.arrow.vector.complex.writer.BaseWriter;
 import org.apache.arrow.vector.holders.*;
 import org.apache.arrow.vector.types.Types;
 import org.apache.arrow.vector.types.pojo.ArrowType;
 import org.apache.arrow.vector.types.pojo.Field;
 import org.apache.arrow.vector.util.Text;
 import org.apache.parquet.example.data.Group;
+import org.apache.parquet.example.data.simple.SimpleGroup;
 import org.apache.parquet.io.InvalidRecordException;
 import org.apache.parquet.schema.PrimitiveType;
 
@@ -216,7 +231,35 @@ public class ParquetConverter {
                     dst.value = valueHolder.value;
                 };
             default:
-                return new Extractor() {};
+                return null;
+        }
+    }
+
+    /**
+     * Since GeneratedRowWriter doesn't yet support complex types (STRUCT, LIST, MAP) we use this to
+     * create our own FieldWriters via customer FieldWriterFactory. In this case we are producing
+     * FieldWriters that only work for our exact example schema. This will be enhanced with a more
+     * generic solution in a future release.
+     */
+    static public FieldWriterFactory getFactory(Field field)
+    {
+        Types.MinorType fieldType = Types.getMinorTypeForArrowType(field.getType());
+        String fieldName = field.getName();
+        switch (fieldType) {
+            case LIST:
+            case MAP:
+            case STRUCT:
+                return (FieldVector vector, Extractor extractor, ConstraintProjector constraint) ->
+                    (FieldWriter) (Object context, int rowNum) ->
+                    {
+                        SimpleGroup grp = (SimpleGroup) context;
+                        System.out.println(context);
+                        Object x = grp.getGroup(fieldName, 0);
+                        BlockUtils.setComplexValue(vector, rowNum, new ParquetFieldResolver(0), x);
+                        return true;
+                    };
+            default:
+                throw new IllegalArgumentException("Unsupported type " + fieldType);
         }
     }
 

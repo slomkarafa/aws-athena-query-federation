@@ -1,27 +1,9 @@
-/*-
- * #%L
- * athena-deltalake
- * %%
- * Copyright (C) 2019 Amazon Web Services
- * %%
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *      http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- * #L%
- */
 package com.amazonaws.connectors.athena.deltalake;
 
 import com.amazonaws.athena.connector.lambda.QueryStatusChecker;
 import com.amazonaws.athena.connector.lambda.data.BlockSpiller;
 import com.amazonaws.athena.connector.lambda.data.writers.GeneratedRowWriter;
+import com.amazonaws.athena.connector.lambda.data.writers.extractors.Extractor;
 import com.amazonaws.athena.connector.lambda.domain.Split;
 import com.amazonaws.athena.connector.lambda.handlers.RecordHandler;
 import com.amazonaws.athena.connector.lambda.records.ReadRecordsRequest;
@@ -56,6 +38,7 @@ import static com.amazonaws.connectors.athena.deltalake.DeltalakeMetadataHandler
 import static com.amazonaws.connectors.athena.deltalake.DeltalakeMetadataHandler.SPLIT_PARTITION_VALUES_PROPERTY;
 import static com.amazonaws.connectors.athena.deltalake.converter.DeltaConverter.castPartitionValue;
 import static com.amazonaws.connectors.athena.deltalake.converter.ParquetConverter.getExtractor;
+import static com.amazonaws.connectors.athena.deltalake.converter.ParquetConverter.getFactory;
 
 /**
  * Handles data read record requests for the Athena Deltalake Connector.
@@ -152,7 +135,12 @@ public class DeltalakeRecordHandler
                 builder.withExtractor(fieldName, getExtractor(field, Optional.ofNullable(partitionValue)));
             }
             else {
-                builder.withExtractor(fieldName, getExtractor(field));
+                Extractor extractor = getExtractor(field);
+                if (extractor != null) {
+                    builder.withExtractor(fieldName, extractor);
+                } else {
+                    builder.withFieldWriterFactory(fieldName, getFactory(field));
+                }
                 try {
                     parquetTypeBuilder.addField(parquetSchema.getType(fieldName));
                 } catch (InvalidRecordException ignored) {}

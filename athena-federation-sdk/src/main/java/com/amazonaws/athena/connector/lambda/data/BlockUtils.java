@@ -20,6 +20,8 @@ package com.amazonaws.athena.connector.lambda.data;
  * #L%
  */
 
+import java.util.*;
+import java.util.stream.IntStream;
 import org.apache.arrow.memory.ArrowBuf;
 import org.apache.arrow.memory.BufferAllocator;
 import org.apache.arrow.util.VisibleForTesting;
@@ -47,6 +49,7 @@ import org.apache.arrow.vector.complex.StructVector;
 import org.apache.arrow.vector.complex.impl.UnionListWriter;
 import org.apache.arrow.vector.complex.impl.UnionMapWriter;
 import org.apache.arrow.vector.complex.reader.FieldReader;
+import org.apache.arrow.vector.complex.writer.BaseWriter;
 import org.apache.arrow.vector.complex.writer.BaseWriter.StructWriter;
 import org.apache.arrow.vector.complex.writer.FieldWriter;
 import org.apache.arrow.vector.types.Types;
@@ -64,12 +67,6 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.Date;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Map;
 
 /**
  * This utility class abstracts many facets of reading and writing values into Apache Arrow's FieldReader and FieldVector
@@ -637,7 +634,8 @@ public class BlockUtils
             //For each child field that comprises the struct, attempt to extract and write the corresponding value
             //using the FieldResolver.
             Object childValue = resolver.getFieldValue(nextChild, value);
-            switch (Types.getMinorTypeForArrowType(nextChild.getType())) {
+            Types.MinorType fieldType = Types.getMinorTypeForArrowType(nextChild.getType());
+            switch (fieldType) {
                 case LIST:
                     writeList(allocator,
                             (FieldWriter) writer.list(nextChild.getName()),
@@ -653,6 +651,15 @@ public class BlockUtils
                             pos,
                             childValue,
                             resolver);
+                    break;
+                case MAP:
+                    writeMap(
+                        allocator,
+                        writer.map(nextChild.getName()),
+                        nextChild,
+                        pos,
+                        childValue,
+                        resolver);
                     break;
                 default:
                     writeStructValue(writer, nextChild, allocator, childValue);
@@ -1066,12 +1073,11 @@ public class BlockUtils
      */
     @VisibleForTesting
     protected static void writeMap(BufferAllocator allocator,
-                                      UnionMapWriter writer,
+                                      BaseWriter.MapWriter writer,
                                       Field field,
                                       int pos,
                                       Object value,
-                                      FieldResolver resolver)
-    {
+                                      FieldResolver resolver) {
         //We expect null writes to have been handled earlier so this is a no-op.
         if (value == null) {
             return;
@@ -1084,8 +1090,7 @@ public class BlockUtils
         Field keyValueStructField;
         if (children.size() != 1) {
             throw new IllegalStateException("Invalid Arrow Map schema: " + field);
-        }
-        else {
+        } else {
             keyValueStructField = children.get(0);
             if (!ENTRIES.equals(keyValueStructField.getName()) || !(keyValueStructField.getType() instanceof ArrowType.Struct)) {
                 throw new IllegalStateException("Invalid Arrow Map schema: " + field);
@@ -1097,8 +1102,7 @@ public class BlockUtils
         Field valueField;
         if (keyValueChildren.size() != 2) {
             throw new IllegalStateException("Invalid Arrow Map schema: " + field);
-        }
-        else {
+        } else {
             keyField = keyValueChildren.get(0);
             valueField = keyValueChildren.get(1);
             if (!KEY.equals(keyField.getName()) || !VALUE.equals(valueField.getName())) {
@@ -1106,33 +1110,43 @@ public class BlockUtils
             }
         }
 
-        for (Field nextChild : keyValueChildren) {
-            //For each child field that comprises the Map, attempt to extract and write the corresponding value
-            //using the FieldResolver.
-            Object childValue = resolver.getFieldValue(nextChild, value);
-            switch (Types.getMinorTypeForArrowType(nextChild.getType())) {
-                case LIST:
-                    writeList(allocator,
-                            (FieldWriter) writer.list(nextChild.getName()),
+        ListIterator mapValues = ((List) resolver.getFieldValue(field, value)).listIterator();
+        while (mapValues.hasNext()) {
+            writer.startEntry();
+            Object currentItem = mapValues.next();
+            for (Field nextChild : keyValueChildren) {
+                //For each child field that comprises the Map, attempt to extract and write the corresponding value
+                //using the FieldResolver.
+                Object childValue = resolver.getFieldValue(nextChild, currentItem);
+                switch (Types.getMinorTypeForArrowType(nextChild.getType())) {
+                    case LIST:
+                        writeList(
+                            allocator,
+                            (FieldWriter) ((FieldWriter) writer).list(nextChild.getName()),
                             nextChild,
                             pos,
                             ((List) childValue),
-                            resolver);
-                    break;
-                case STRUCT:
-                    writeStruct(allocator,
-                            writer.struct(nextChild.getName()),
+                            resolver
+                        );
+                        break;
+                    case STRUCT:
+                        writeStruct(
+                            allocator,
+                            ((FieldWriter) writer).struct(nextChild.getName()),
                             nextChild,
                             pos,
                             childValue,
-                            resolver);
-                    break;
-                default:
-                    writeMapValue(writer, nextChild, allocator, childValue);
-                    break;
+                            resolver
+                        );
+                        break;
+                    default:
+                        writeMapValue(writer, nextChild, allocator, childValue);
+                        break;
+                }
             }
+            writer.endEntry();
         }
-        writer.endEntry();
+        writer.endMap();
     }
 
     /**
@@ -1150,9 +1164,9 @@ public class BlockUtils
      * release we hope to have contributed a better option to Apache Arrow which allows us to simplify this method.
      */
     @VisibleForTesting
-    protected static void writeMapValue(UnionMapWriter writer, Field field, BufferAllocator allocator, Object value)
+    protected static void writeMapValue(BaseWriter.MapWriter writer, Field field, BufferAllocator allocator, Object value)
     {
-        writer.startEntry();
+//        writer.startEntry();
         if (field.getName().equalsIgnoreCase("key")) {
             writer = writer.key();
         }
@@ -1168,6 +1182,7 @@ public class BlockUtils
         }
 
         ArrowType type = field.getType();
+        FieldWriter fieldWriter = (FieldWriter) writer;
         try {
             switch (Types.getMinorTypeForArrowType(type)) {
                 case TIMESTAMPMILLITZ:
@@ -1187,14 +1202,14 @@ public class BlockUtils
                     else {
                         dateTimeWithZone = (long) value;
                     }
-                    writer.timeStampMilliTZ(field.getName()).writeTimeStampMilliTZ(dateTimeWithZone);
+                    fieldWriter.timeStampMilliTZ(field.getName()).writeTimeStampMilliTZ(dateTimeWithZone);
                     break;
                 case DATEMILLI:
                     if (value instanceof Date) {
-                        writer.dateMilli(field.getName()).writeDateMilli(((Date) value).getTime());
+                        fieldWriter.dateMilli(field.getName()).writeDateMilli(((Date) value).getTime());
                     }
                     else {
-                        writer.dateMilli(field.getName()).writeDateMilli((long) value);
+                        fieldWriter.dateMilli(field.getName()).writeDateMilli((long) value);
                     }
                     break;
 
@@ -1202,66 +1217,66 @@ public class BlockUtils
                     if (value instanceof Date) {
                         org.joda.time.Days days = org.joda.time.Days.daysBetween(EPOCH,
                                 new org.joda.time.DateTime(((Date) value).getTime()));
-                        writer.dateDay(field.getName()).writeDateDay(days.getDays());
+                        fieldWriter.dateDay(field.getName()).writeDateDay(days.getDays());
                     }
                     else if (value instanceof LocalDate) {
                         int days = (int) ((LocalDate) value).toEpochDay();
-                        writer.dateDay(field.getName()).writeDateDay(days);
+                        fieldWriter.dateDay(field.getName()).writeDateDay(days);
                     }
                     else if (value instanceof Long) {
-                        writer.dateDay(field.getName()).writeDateDay(((Long) value).intValue());
+                        fieldWriter.dateDay(field.getName()).writeDateDay(((Long) value).intValue());
                     }
                     else {
-                        writer.dateDay(field.getName()).writeDateDay((int) value);
+                        fieldWriter.dateDay(field.getName()).writeDateDay((int) value);
                     }
                     break;
                 case FLOAT8:
-                    writer.float8(field.getName()).writeFloat8((double) value);
+                    fieldWriter.float8(field.getName()).writeFloat8((double) value);
                     break;
                 case FLOAT4:
-                    writer.float4(field.getName()).writeFloat4((float) value);
+                    fieldWriter.float4(field.getName()).writeFloat4((float) value);
                     break;
                 case INT:
                     if (value != null && value instanceof Long) {
                         //This may seem odd at first but many frameworks (like Presto) use long as the preferred
                         //native java type for representing integers. We do this to keep type conversions simple.
-                        writer.integer(field.getName()).writeInt(((Long) value).intValue());
+                        fieldWriter.integer(field.getName()).writeInt(((Long) value).intValue());
                     }
                     else {
-                        writer.integer(field.getName()).writeInt((int) value);
+                        fieldWriter.integer(field.getName()).writeInt((int) value);
                     }
                     break;
                 case TINYINT:
-                    writer.tinyInt(field.getName()).writeTinyInt((byte) value);
+                    fieldWriter.tinyInt(field.getName()).writeTinyInt((byte) value);
                     break;
                 case SMALLINT:
-                    writer.smallInt(field.getName()).writeSmallInt((short) value);
+                    fieldWriter.smallInt(field.getName()).writeSmallInt((short) value);
                     break;
                 case UINT1:
-                    writer.uInt1(field.getName()).writeUInt1((byte) value);
+                    fieldWriter.uInt1(field.getName()).writeUInt1((byte) value);
                     break;
                 case UINT2:
-                    writer.uInt2(field.getName()).writeUInt2((char) value);
+                    fieldWriter.uInt2(field.getName()).writeUInt2((char) value);
                     break;
                 case UINT4:
-                    writer.uInt4(field.getName()).writeUInt4((int) value);
+                    fieldWriter.uInt4(field.getName()).writeUInt4((int) value);
                     break;
                 case UINT8:
-                    writer.uInt8(field.getName()).writeUInt8((long) value);
+                    fieldWriter.uInt8(field.getName()).writeUInt8((long) value);
                     break;
                 case BIGINT:
-                    writer.bigInt(field.getName()).writeBigInt((long) value);
+                    fieldWriter.bigInt(field.getName()).writeBigInt((long) value);
                     break;
                 case VARBINARY:
                     if (value instanceof ArrowBuf) {
                         ArrowBuf buf = (ArrowBuf) value;
-                        writer.varBinary(field.getName()).writeVarBinary(0, (int) (buf.capacity()), buf);
+                        fieldWriter.varBinary(field.getName()).writeVarBinary(0, (int) (buf.capacity()), buf);
                     }
                     else if (value instanceof byte[]) {
                         byte[] bytes = (byte[]) value;
                         try (ArrowBuf buf = allocator.buffer(bytes.length)) {
                             buf.writeBytes(bytes);
-                            writer.varBinary(field.getName()).writeVarBinary(0, (int) (buf.readableBytes()), buf);
+                            fieldWriter.varBinary(field.getName()).writeVarBinary(0, (int) (buf.readableBytes()), buf);
                         }
                     }
                     break;
@@ -1271,11 +1286,11 @@ public class BlockUtils
                     if (value instanceof Double) {
                         BigDecimal bdVal = new BigDecimal((double) value);
                         bdVal = bdVal.setScale(scale, RoundingMode.HALF_UP);
-                        writer.decimal(field.getName(), scale, precision).writeDecimal(bdVal);
+                        fieldWriter.decimal(field.getName(), scale, precision).writeDecimal(bdVal);
                     }
                     else {
                         BigDecimal scaledValue = ((BigDecimal) value).setScale(scale, RoundingMode.HALF_UP);
-                        writer.decimal(field.getName(), scale, precision).writeDecimal(scaledValue);
+                        fieldWriter.decimal(field.getName(), scale, precision).writeDecimal(scaledValue);
                     }
                     break;
                 case VARCHAR:
@@ -1283,30 +1298,30 @@ public class BlockUtils
                         byte[] bytes = ((String) value).getBytes(Charsets.UTF_8);
                         try (ArrowBuf buf = allocator.buffer(bytes.length)) {
                             buf.writeBytes(bytes);
-                            writer.varChar(field.getName()).writeVarChar(0, (int) (buf.readableBytes()), buf);
+                            fieldWriter.varChar(field.getName()).writeVarChar(0, (int) (buf.readableBytes()), buf);
                         }
                     }
                     else if (value instanceof ArrowBuf) {
                         ArrowBuf buf = (ArrowBuf) value;
-                        writer.varChar(field.getName()).writeVarChar(0, (int) (buf.readableBytes()), buf);
+                        fieldWriter.varChar(field.getName()).writeVarChar(0, (int) (buf.readableBytes()), buf);
                     }
                     else if (value instanceof byte[]) {
                         byte[] bytes = (byte[]) value;
                         try (ArrowBuf buf = allocator.buffer(bytes.length)) {
                             buf.writeBytes(bytes);
-                            writer.varChar(field.getName()).writeVarChar(0, (int) (buf.readableBytes()), buf);
+                            fieldWriter.varChar(field.getName()).writeVarChar(0, (int) (buf.readableBytes()), buf);
                         }
                     }
                     break;
                 case BIT:
                     if (value instanceof Integer && (int) value > 0) {
-                        writer.bit(field.getName()).writeBit(1);
+                        fieldWriter.bit(field.getName()).writeBit(1);
                     }
                     else if (value instanceof Boolean && (boolean) value) {
-                        writer.bit(field.getName()).writeBit(1);
+                        fieldWriter.bit(field.getName()).writeBit(1);
                     }
                     else {
-                        writer.bit(field.getName()).writeBit(0);
+                        fieldWriter.bit(field.getName()).writeBit(0);
                     }
                     break;
                 default:

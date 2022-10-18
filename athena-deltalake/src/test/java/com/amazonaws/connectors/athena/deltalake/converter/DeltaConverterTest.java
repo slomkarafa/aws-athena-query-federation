@@ -72,11 +72,23 @@ public class DeltaConverterTest {
             ))
         ));
         Field expectedMapField = createField("f", new ArrowType.Map(true), true, Arrays.asList(
-            createField("f.key", new ArrowType.Utf8(), false),
-            createField("f.value", new ArrowType.Utf8(), true)
+            createField("entries", new ArrowType.Struct(), false, Arrays.asList(
+                createField("key", new ArrowType.Utf8(), false),
+                createField("value", new ArrowType.Utf8(), true)
+            ))
         ));
 
+        System.out.println(expectedMapField.toString());
+        System.out.println(arrowSchema.toString());
+
         List<Field> fields = arrowSchema.getFields();
+
+        System.out.println(fields.get(4).getChildren());
+        System.out.println(expectedMapField.getChildren());
+        Field structField = expectedMapField.getChildren().get(0);
+        Field keyField = structField.getChildren().get(0);
+        System.out.println(keyField.toString());
+
         assertEquals(5, fields.size());
         assertEquals(expectedIntField, fields.get(0));
         assertEquals(expectedStructField, fields.get(1));
