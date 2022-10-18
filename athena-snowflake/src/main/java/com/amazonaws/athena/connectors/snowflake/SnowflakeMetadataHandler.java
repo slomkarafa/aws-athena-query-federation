@@ -36,6 +36,8 @@ import com.amazonaws.athena.connector.lambda.metadata.GetSplitsResponse;
 import com.amazonaws.athena.connector.lambda.metadata.GetTableLayoutRequest;
 import com.amazonaws.athena.connector.lambda.metadata.GetTableRequest;
 import com.amazonaws.athena.connector.lambda.metadata.GetTableResponse;
+import com.amazonaws.athena.connector.lambda.metadata.ListSchemasRequest;
+import com.amazonaws.athena.connector.lambda.metadata.ListSchemasResponse;
 import com.amazonaws.athena.connectors.jdbc.connection.DatabaseConnectionConfig;
 import com.amazonaws.athena.connectors.jdbc.connection.DatabaseConnectionInfo;
 import com.amazonaws.athena.connectors.jdbc.connection.GenericJdbcConnectionFactory;
@@ -48,6 +50,7 @@ import com.amazonaws.services.athena.AmazonAthena;
 import com.amazonaws.services.secretsmanager.AWSSecretsManager;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.ImmutableMap;
+import com.google.common.collect.ImmutableSet;
 import org.apache.arrow.vector.complex.reader.FieldReader;
 import org.apache.arrow.vector.types.Types;
 import org.apache.arrow.vector.types.pojo.ArrowType;
@@ -68,6 +71,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
+
+import static java.util.Map.entry;
 
 /**
  * Handles metadata for Snowflake. User must have access to `schemata`, `tables`, `columns` in
@@ -299,7 +304,7 @@ public class SnowflakeMetadataHandler extends JdbcMetadataHandler
     @Override
     public GetTableResponse doGetTable(final BlockAllocator blockAllocator, final GetTableRequest getTableRequest)
     {
-       try (Connection connection = getJdbcConnectionFactory().getConnection(getCredentialProvider())) {
+        try (Connection connection = getJdbcConnectionFactory().getConnection(getCredentialProvider())) {
             Schema partitionSchema = getPartitionSchema(getTableRequest.getCatalogName());
             TableName tableName = getTableFromMetadata(connection.getCatalog(), getTableRequest.getTableName(), connection.getMetaData());
             GetTableResponse getTableResponse = new GetTableResponse(getTableRequest.getCatalogName(), tableName, getSchema(connection, tableName, partitionSchema),
@@ -358,26 +363,16 @@ public class SnowflakeMetadataHandler extends JdbcMetadataHandler
                     String dataType = hashMap.get(columnName);
                     LOGGER.debug("columnName: " + columnName);
                     LOGGER.debug("dataType: " + dataType);
-                    if (dataType != null && (dataType.equalsIgnoreCase("DECIMAL"))) {
-                        columnType = Types.MinorType.BIGINT.getType();
-                    }
-                    if (dataType != null && (dataType.equalsIgnoreCase("INTEGER"))) {
-                        columnType = Types.MinorType.INT.getType();
-                    }
-                    if (dataType != null && (dataType.equalsIgnoreCase("DATE"))) {
-                        columnType = Types.MinorType.TIMESTAMPMILLI.getType();
-                    }
-                    /**
-                     * Converting TIMESTAMP data type into TIMESTAMPMILLI
-                     */
-                    if (dataType != null && (dataType.equalsIgnoreCase("TIMESTAMP"))
-                    ) {
-                        columnType = Types.MinorType.TIMESTAMPMILLI.getType();
-                    }
-                    if (dataType != null && (dataType.equalsIgnoreCase("TIMESTAMP_NTZ"))
-                    ) {
-                        LOGGER.debug(" inside TIMESTAMP ");
-                        columnType = Types.MinorType.TIMESTAMPMILLI.getType();
+                    final Map<String, ArrowType> stringArrowTypeMap = Map.ofEntries(
+                            entry("INTEGER", Types.MinorType.INT.getType()),
+                            entry("DATE", Types.MinorType.DATEDAY.getType()),
+                            entry("TIMESTAMP", Types.MinorType.DATEMILLI.getType()),
+                            entry("TIMESTAMP_LTZ", Types.MinorType.DATEMILLI.getType()),
+                            entry("TIMESTAMP_NTZ", Types.MinorType.DATEMILLI.getType()),
+                            entry("TIMESTAMP_TZ", Types.MinorType.DATEMILLI.getType())
+                    );
+                    if (dataType != null && stringArrowTypeMap.containsKey(dataType.toUpperCase())) {
+                        columnType = stringArrowTypeMap.get(dataType.toUpperCase());
                     }
                     /**
                      * converting into VARCHAR for not supported data types.
@@ -505,5 +500,38 @@ public class SnowflakeMetadataHandler extends JdbcMetadataHandler
             }
         }
         return tableName;
+    }
+    @Override
+    public ListSchemasResponse doListSchemaNames(final BlockAllocator blockAllocator, final ListSchemasRequest listSchemasRequest)
+    {
+        try (Connection connection = getJdbcConnectionFactory().getConnection(getCredentialProvider())) {
+            LOGGER.info("{}: List schema names for Catalog {}", listSchemasRequest.getQueryId(), listSchemasRequest.getCatalogName());
+            return new ListSchemasResponse(listSchemasRequest.getCatalogName(), listDatabaseNames(connection));
+        }
+        catch (SQLException sqlException) {
+            throw new RuntimeException(sqlException.getErrorCode() + ": " + sqlException.getMessage());
+        }
+    }
+    protected static Set<String>  listDatabaseNames(final Connection jdbcConnection)
+            throws SQLException
+    {
+        try (ResultSet resultSet = jdbcConnection.getMetaData().getSchemas()) {
+            ImmutableSet.Builder<String> schemaNames = ImmutableSet.builder();
+            String inputCatalogName = jdbcConnection.getCatalog();
+            String inputSchemaName = jdbcConnection.getSchema();
+            while (resultSet.next()) {
+                String schemaName = resultSet.getString("TABLE_SCHEM");
+                String catalogName = resultSet.getString("TABLE_CATALOG");
+                // skip internal schemas
+                boolean shouldAddSchema =
+                        ((inputSchemaName == null) || schemaName.equals(inputSchemaName)) &&
+                                (!schemaName.equals("information_schema") && catalogName.equals(inputCatalogName));
+
+                if (shouldAddSchema) {
+                    schemaNames.add(schemaName);
+                }
+            }
+            return schemaNames.build();
+        }
     }
 }
