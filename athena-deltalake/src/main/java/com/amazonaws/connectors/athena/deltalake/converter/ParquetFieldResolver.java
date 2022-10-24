@@ -7,9 +7,9 @@
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- * 
+ *
  *      http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -66,10 +66,13 @@ public class ParquetFieldResolver implements FieldResolver {
         Group record = (Group) value;
         try {
             if (minorType == MAP && record.getFieldRepetitionCount("key_value") > 0) {
+                var keyValField = field.getChildren().get(0).getChildren();
+                var keyField = keyValField.get(0);
+                var valField = keyValField.get(1);
                 return IntStream
                     .range(0, record.getFieldRepetitionCount("key_value"))
                     .mapToObj(idx -> record.getGroup("key_value", idx))
-                    .collect(Collectors.toList());
+                    .collect(Collectors.toMap(x -> getFieldValue(keyField, x), x -> getFieldValue(valField, x)));
             } else if (record.getFieldRepetitionCount(fieldName) > 0) {
                 switch (minorType) {
                     case STRUCT:
@@ -153,7 +156,7 @@ public class ParquetFieldResolver implements FieldResolver {
                 }
             }
         } catch (InvalidRecordException ignored) {
-            logger.warn(ignored.toString());
+            logger.error(ignored.toString());
         }
         return null;
     }

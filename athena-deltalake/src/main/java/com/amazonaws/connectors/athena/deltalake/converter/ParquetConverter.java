@@ -263,4 +263,17 @@ public class ParquetConverter {
         }
     }
 
+//    /**
+//     * Coerces the raw value from SimpleGroup to normalized type
+//     * @param value raw value from DynamoDB
+//     * @param field Arrow field from table schema
+//     * @param fieldType Corresponding MinorType for field
+//     * @param recordMetadata DDBRecordMetadata object containing any metadata that is passed from schema metadata
+//     * @return coerced value to normalized type
+//     */
+//    public static Object coerceValueToExpectedType(Object value, Field field,
+//                                                   Types.MinorType fieldType, DDBRecordMetadata recordMetadata) {
+//
+//    }
+
 }

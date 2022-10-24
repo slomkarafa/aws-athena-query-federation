@@ -48,7 +48,30 @@ import static org.junit.Assert.*;
 public class ParquetConverterTest {
 
 //    @Test
-//    public void testFactories
+//    public void testFactories() throws Exception {
+//        List<Type> fields = Arrays.asList(
+//            new PrimitiveType(Type.Repetition.OPTIONAL, PrimitiveType.PrimitiveTypeName.BINARY, "stringField")
+////            new PrimitiveType(
+////                Type.Repetition.OPTIONAL,
+////                PrimitiveType.PrimitiveTypeName.FIXED_LEN_BYTE_ARRAY,
+////                5,
+////                "decimalFixedLenField"
+////            )
+//        );
+//
+//        MessageType schema = new MessageType("record", fields);
+//        Group record = new SimpleGroupFactory(schema).newGroup();
+//        record.add(0, "text-test");
+//        Field stringField = Field.nullable("stringField", new ArrowType.Utf8());
+//
+//        // String test
+//        Extractor stringExtractor = getExtractor(stringField);
+//        assertTrue(stringExtractor instanceof VarCharExtractor);
+//        NullableVarCharHolder stringHolder = new NullableVarCharHolder();
+//        ((VarCharExtractor) stringExtractor).extract(record, stringHolder);
+//        assertEquals(1, stringHolder.isSet);
+//        assertEquals("text-test", stringHolder.value);
+//    }
 
     @Test
     public void testExtractors() throws Exception {
