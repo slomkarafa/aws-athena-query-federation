@@ -30,18 +30,20 @@ import com.amazonaws.athena.connector.lambda.records.RecordResponse;
 import com.amazonaws.auth.AWSStaticCredentialsProvider;
 import com.amazonaws.auth.AnonymousAWSCredentials;
 import com.amazonaws.client.builder.AwsClientBuilder;
+import com.amazonaws.connectors.athena.deltalake.converter.DeltaConverter;
 import com.amazonaws.services.athena.AmazonAthena;
 import com.amazonaws.services.s3.AmazonS3ClientBuilder;
 import com.amazonaws.services.secretsmanager.AWSSecretsManager;
-import java.time.LocalDate;
+import java.io.File;
+import java.io.IOException;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
 import org.apache.arrow.vector.types.Types;
 import org.apache.arrow.vector.types.pojo.ArrowType;
 import org.apache.arrow.vector.types.pojo.Schema;
+import org.apache.commons.io.FileUtils;
 import org.apache.hadoop.conf.Configuration;
-import org.apache.parquet.example.data.simple.SimpleGroup;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Rule;
@@ -56,9 +58,9 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 import static org.mockito.Mockito.mock;
 
-public class DeltalakeRecordHandlerTest2 extends TestBase
+public class DeltalakeRecordHandlerTest3 extends TestBase
 {
-    private static final Logger logger = LoggerFactory.getLogger(DeltalakeRecordHandlerTest2.class);
+    private static final Logger logger = LoggerFactory.getLogger(DeltalakeRecordHandlerTest3.class);
 
     private DeltalakeRecordHandler handler;
     private BlockAllocatorImpl allocator;
@@ -76,33 +78,14 @@ public class DeltalakeRecordHandlerTest2 extends TestBase
     }
 
     @Before
-    public void setUp()
-    {
+    public void setUp() throws IOException {
         logger.info("{}: enter", testName.getMethodName());
 
-        String tenantCol = "tenant";
-        String yearCol = "year";
-        String monthCol = "month";
-        String dayCol = "day";
         String dataBucket = "test-bucket-1";
 
-        schemaForRead = SchemaBuilder.newBuilder()
-            .addStringField(tenantCol)
-            .addStringField(yearCol)
-            .addStringField(monthCol)
-            .addStringField(dayCol)
-            .addField(
-                FieldBuilder.newBuilder("metadata", Types.MinorType.STRUCT.getType())
-                    .addStringField("name")
-                    .build()
-            )
-            .addField(
-                FieldBuilder.newBuilder("testMap", new ArrowType.Map(true))
-                .addField("entries", Types.MinorType.STRUCT.getType(), false, Arrays.asList(
-                    FieldBuilder.newBuilder("key", Types.MinorType.VARCHAR.getType(), false).build(),
-                    FieldBuilder.newBuilder("value", Types.MinorType.VARCHAR.getType()).build()))
-                .build())
-            .build();
+        File schemaStringFile = new File(getClass().getClassLoader().getResource("complex_table_schema.json").getFile());
+        String schemaString = FileUtils.readFileToString(schemaStringFile, "UTF-8");
+        schemaForRead = DeltaConverter.getArrowSchema(schemaString);
 
         allocator = new BlockAllocatorImpl();
 
@@ -141,11 +124,11 @@ public class DeltalakeRecordHandlerTest2 extends TestBase
             ReadRecordsRequest request = new ReadRecordsRequest(fakeIdentity(),
                 catalogName,
                 queryId,
-                new TableName("test-database-2", "nested-table"),
+                new TableName("test-database-2", "complex-table"),
                 schemaForRead,
                 Split.newBuilder(makeSpillLocation(queryId, "1234"), null)
-                    .add(SPLIT_PARTITION_VALUES_PROPERTY, "{\"tenant\":\"fooTenant\",\"year\":\"2022\",\"month\":\"5\",\"day\":\"26\"}")
-                    .add(SPLIT_FILE_PROPERTY, "tenant=fooTenant/year=2022/month=5/day=26/part-00193-05d483df-8da5-46a8-ad53-30df52e07bdc.c000.snappy.parquet")
+                    .add(SPLIT_PARTITION_VALUES_PROPERTY, "{\"tenant\":\"testTenant0\"}")
+                    .add(SPLIT_FILE_PROPERTY, "tenant=testTenant0/part-00000-5f547a1b-4a97-45f5-a658-55ab320707ae.c000.snappy.parquet")
                     .build(),
                 new Constraints(constraintsMap),
                 100_000_000_000L, //100GB don't expect this to spill
@@ -157,12 +140,8 @@ public class DeltalakeRecordHandlerTest2 extends TestBase
 
             ReadRecordsResponse response = (ReadRecordsResponse) rawResponse;
 
-            Block expectedBlock = allocator.createBlock(schemaForRead);
-
-            expectedBlock.setRowCount(2);
-
-            String expectedRow0 = "[tenant : fooTenant], [year : 2022], [month : 5], [day : 26], [metadata : {[name : bar]}], [testMap : {[key : xdxd],[value : dxdx]}]";
-            String expectedRow1 = "[tenant : fooTenant], [year : 2022], [month : 5], [day : 26], [metadata : {[name : barzz]}], [testMap : {[key : xdxd],[value : dxdx3]}{[key : a],[value : b]}]";
+            String expectedRow0 = "[tenant : testTenant0], [testArrayString : {foo,bar}], [testArrayInt : {0,1,2,3}], [testMapString : {[key : foo],[value : bar]}{[key : foo1],[value : bar1]}], [testStruct : {[name : foobar],[id : 0]}], [complexStruct : {[testStruct : {[name : foobar],[id : 4]}],[testArray : {foo,bar}],[testMap : {[key : foo],[value : bar]}{[key : foo1],[value : bar1]}]}], [arrayOfIntArrays : {{0,1,2},{2,3,4}}], [arrayOfStructs : {{[name : foobar],[id : 1]},{[name : foobar1],[id : 2]}}], [arrayOfMaps : {{[key : foo],[value : bar]}{[key : foo1],[value : bar1]},{[key : foo1],[value : bar1]}{[key : foo2],[value : bar3]}}], [mapWithMaps : {[key : boo],[value : {[key : foo],[value : bar]}{[key : foo1],[value : bar1]}]}], [mapWithStructs : {[key : boo],[value : {[name : foobar],[id : 3]}]}], [mapWithArrays : {[key : boo],[value : {foo,bar}]}]";
+            String expectedRow1 = "[tenant : testTenant0], [testArrayString : {foo,zar}], [testArrayInt : {0,1,2,3,4}], [testMapString : {[key : foo],[value : zar]}{[key : foo1],[value : zar1]}], [testStruct : {[name : foozar],[id : 10]}], [complexStruct : {[testStruct : {[name : foozar],[id : 14]}],[testArray : {foo,zar}],[testMap : {[key : foo],[value : zar]}{[key : foo1],[value : zar1]}]}], [arrayOfIntArrays : {{10,11,12},{12,13,14}}], [arrayOfStructs : {{[name : foozar],[id : 11]},{[name : foozar1],[id : 12]}}], [arrayOfMaps : {{[key : foo],[value : zar]}{[key : foo1],[value : zar1]},{[key : foo1],[value : zar1]}{[key : foo2],[value : zar3]}}], [mapWithMaps : {[key : boo],[value : {[key : foo],[value : zar]}{[key : foo1],[value : zar1]}]}], [mapWithStructs : {[key : boo],[value : {[name : foozar],[id : 13]}]}], [mapWithArrays : {[key : boo],[value : {foo,zar}]}]";
 
             assertEquals(expectedRow0, BlockUtils.rowToString(response.getRecords(), 0));
             assertEquals(expectedRow1, BlockUtils.rowToString(response.getRecords(), 1));

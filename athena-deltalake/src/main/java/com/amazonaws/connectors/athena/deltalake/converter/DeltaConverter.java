@@ -160,7 +160,7 @@ public class DeltaConverter {
                 case "array":
                     JsonNode elementType = fieldType.get("elementType");
                     boolean elementNullable = fieldType.get("containsNull").asBoolean();
-                    String elementName = fieldName + ".element";
+                    String elementName = "element";
                     Field elementField = getAvroField(elementType, elementName, elementNullable);
                     return new Field(
                             fieldName,

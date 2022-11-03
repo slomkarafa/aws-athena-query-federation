@@ -29,7 +29,10 @@ import com.amazonaws.athena.connector.lambda.domain.predicate.ConstraintProjecto
 import com.google.common.base.Charsets;
 import com.google.common.primitives.Ints;
 import com.google.common.primitives.Longs;
+import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 import org.apache.arrow.memory.ArrowBuf;
 import org.apache.arrow.vector.FieldVector;
 import org.apache.arrow.vector.complex.ListVector;
@@ -46,12 +49,16 @@ import org.apache.parquet.example.data.Group;
 import org.apache.parquet.example.data.simple.SimpleGroup;
 import org.apache.parquet.io.InvalidRecordException;
 import org.apache.parquet.schema.PrimitiveType;
+import org.apache.parquet.example.data.Group;
+
 
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
+
+import static org.apache.arrow.vector.types.Types.MinorType.MAP;
 
 /**
  * Contains util functions to convert Parquet data into Arrow format
@@ -245,17 +252,37 @@ public class ParquetConverter {
     {
         Types.MinorType fieldType = Types.getMinorTypeForArrowType(field.getType());
         String fieldName = field.getName();
-        switch (fieldType) {
+        var resolver = new ParquetFieldResolver(0);
+
+//        return (FieldVector vector, Extractor extractor, ConstraintProjector constraint) ->
+//            (FieldWriter) (Object context, int rowNum) ->
+//            {
+//                Object x = resolver.getFieldValue(field, context);
+//                BlockUtils.setComplexValue(vector, rowNum, resolver, x);
+//                return true;
+//            };
+                switch (fieldType) {
             case LIST:
+                return (FieldVector vector, Extractor extractor, ConstraintProjector constraint) ->
+                    (FieldWriter) (Object context, int rowNum) ->
+                    {
+                        SimpleGroup record = (SimpleGroup) context;
+                        Group list = record.getGroup(fieldName, 0);
+                        var x = IntStream
+                            .range(0, list.getFieldRepetitionCount(0))
+                            .mapToObj(idx -> resolver.getFieldValue(field.getChildren().get(0), list.getGroup(0, idx)))
+                            .collect(Collectors.toList());
+                        BlockUtils.setComplexValue(vector, rowNum, resolver, x);
+                        return true;
+                    };
             case MAP:
             case STRUCT:
                 return (FieldVector vector, Extractor extractor, ConstraintProjector constraint) ->
                     (FieldWriter) (Object context, int rowNum) ->
                     {
                         SimpleGroup grp = (SimpleGroup) context;
-                        System.out.println(context);
-                        Object x = grp.getGroup(fieldName, 0);
-                        BlockUtils.setComplexValue(vector, rowNum, new ParquetFieldResolver(0), x);
+                        Object x = grp.getGroup(field.getName(), 0);
+                        BlockUtils.setComplexValue(vector, rowNum, resolver, x);
                         return true;
                     };
             default:

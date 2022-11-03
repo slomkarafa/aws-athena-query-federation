@@ -27,10 +27,7 @@ import com.google.common.primitives.Ints;
 import com.google.common.primitives.Longs;
 import java.math.BigDecimal;
 import java.math.BigInteger;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
+import java.util.*;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
@@ -65,7 +62,7 @@ public class ParquetFieldResolver implements FieldResolver {
         String fieldName = field.getName();
         Group record = (Group) value;
         try {
-            if (minorType == MAP && record.getFieldRepetitionCount("key_value") > 0) {
+            if (minorType == MAP && record.getType().containsField("key_value") && record.getFieldRepetitionCount("key_value") > 0) {
                 var keyValField = field.getChildren().get(0).getChildren();
                 var keyField = keyValField.get(0);
                 var valField = keyValField.get(1);
@@ -75,14 +72,33 @@ public class ParquetFieldResolver implements FieldResolver {
                     .collect(Collectors.toMap(x -> getFieldValue(keyField, x), x -> getFieldValue(valField, x)));
             } else if (record.getFieldRepetitionCount(fieldName) > 0) {
                 switch (minorType) {
+//                    case MAP:
+//                        var innerRecord = record.getGroup(field)
+//                        var keyValField = field.getChildren().get(0).getChildren();
+//                        var keyField = keyValField.get(0);
+//                        var valField = keyValField.get(1);
+//                        return IntStream
+//                            .range(0, record.getFieldRepetitionCount("key_value"))
+//                            .mapToObj(idx -> record.getGroup("key_value", idx))
+//                            .collect(Collectors.toMap(x -> getFieldValue(keyField, x), x -> getFieldValue(valField, x)));
                     case STRUCT:
+                    case MAP:
                         return record.getGroup(fieldName, rowNum);
                     case LIST:
                         Group list = record.getGroup(fieldName, rowNum);
-                        return IntStream
+                        var a = field.getChildren();
+                            var b = a.get(0);
+                        var x = IntStream
                             .range(0, list.getFieldRepetitionCount(0))
-                            .mapToObj(idx -> list.getGroup(0, idx))
+//                            .mapToObj(idx -> list.getGroup(0, idx))
+                            .mapToObj(idx -> {
+                                var f = field.getChildren().get(0);
+                                var arrayField = new Field("element", f.getFieldType(), List.of());
+                                return getFieldValue(arrayField, list.getGroup(0, idx));
+                            })
                             .collect(Collectors.toList());
+
+                        return x;
                     case TINYINT:
                         return (byte) record.getInteger(fieldName, rowNum);
                     case SMALLINT:
@@ -157,6 +173,7 @@ public class ParquetFieldResolver implements FieldResolver {
             }
         } catch (InvalidRecordException ignored) {
             logger.error(ignored.toString());
+            logger.error(Arrays.toString(ignored.getStackTrace()));
         }
         return null;
     }
