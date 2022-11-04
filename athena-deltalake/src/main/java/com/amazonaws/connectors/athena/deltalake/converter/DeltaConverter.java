@@ -34,22 +34,30 @@ import org.apache.commons.lang.NotImplementedException;
 import java.sql.Timestamp;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.Iterator;
+import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+
+import static java.lang.Math.toIntExact;
 
 /**
  * Contains util functions to convert Delta types into Arrow or Java types
  */
-public class DeltaConverter {
-
+public class DeltaConverter
+{
+    private DeltaConverter() {}
     /**
      * Convert a delta schema into a Arrow schema
      * @param deltaSchemaString The Delta schema represented as a JSON string
      * @return A Arrow Schema
      * @throws JsonProcessingException
      */
-    static public Schema getArrowSchema(String deltaSchemaString) throws JsonProcessingException {
+    public static Schema getArrowSchema(String deltaSchemaString) throws JsonProcessingException
+    {
         ObjectMapper mapper = new ObjectMapper();
         JsonNode schemaJson = mapper.readTree(deltaSchemaString);
         Iterator<JsonNode> fields = schemaJson.withArray("fields").elements();
@@ -69,7 +77,8 @@ public class DeltaConverter {
      * @param fieldNullable If the field is nullable
      * @return A Arrow field
      */
-    static protected Field getAvroField(JsonNode fieldType, String fieldName, boolean fieldNullable) {
+    protected static Field getAvroField(JsonNode fieldType, String fieldName, boolean fieldNullable)
+    {
         if (fieldType.isTextual()) {
             String fieldTypeName = fieldType.asText();
             switch (fieldTypeName) {
@@ -129,7 +138,7 @@ public class DeltaConverter {
                             new FieldType(fieldNullable, Types.MinorType.DATEMILLI.getType(), null),
                             null);
                 default:
-                   if(fieldTypeName.startsWith("decimal(")) {
+                   if (fieldTypeName.startsWith("decimal(")) {
                         Pattern pattern = Pattern.compile("decimal\\((\\d+),\\s*(\\d+)\\)");
                         Matcher matcher = pattern.matcher(fieldTypeName);
                         matcher.find();
@@ -139,11 +148,13 @@ public class DeltaConverter {
                                 fieldName,
                                 new FieldType(fieldNullable, ArrowType.Decimal.createDecimal(precision, scale, null), null),
                                 null);
-                    } else {
+                    }
+                   else {
                        throw new UnsupportedOperationException("Field type name not supported: " + fieldTypeName);
                    }
             }
-        } else {
+        }
+        else {
             String complexTypeName = fieldType.get("type").asText();
             switch (complexTypeName) {
                 case "struct":
@@ -186,7 +197,8 @@ public class DeltaConverter {
         throw new UnsupportedOperationException("Unsupported field type: " + fieldType.toString());
     }
 
-    static public Field getAvroField(JsonNode field) {
+    public static Field getAvroField(JsonNode field)
+    {
         String fieldName = field.get("name").asText();
         boolean fieldNullable = field.get("nullable").asBoolean();
         JsonNode fieldType = field.get("type");
@@ -199,17 +211,19 @@ public class DeltaConverter {
      * @param arrowType The expected arrow type for the partition column
      * @return The parition value as an Object
      */
-    public static Object castPartitionValue(String partitionValue, ArrowType arrowType) {
-        if (partitionValue.isEmpty()) return null;
+    public static Object castPartitionValue(String partitionValue, ArrowType arrowType)
+    {
+        if (partitionValue.isEmpty()) {
+            return null;
+        }
         switch (arrowType.getTypeID()) {
             case Utf8: return new Text(partitionValue);
             case Int: return Integer.parseInt(partitionValue);
             case FloatingPoint: return Float.parseFloat(partitionValue);
             case Timestamp: return Timestamp.valueOf(partitionValue);
-            case Date: return Math.toIntExact(LocalDate.parse(partitionValue, DateTimeFormatter.ISO_LOCAL_DATE).toEpochDay());
+            case Date: return toIntExact(LocalDate.parse(partitionValue, DateTimeFormatter.ISO_LOCAL_DATE).toEpochDay());
             case Bool: return Boolean.parseBoolean(partitionValue) ? 1 : 0;
             default: throw new NotImplementedException(String.format("Partitions of type %s are not supported", arrowType.getTypeID().name()));
         }
     }
-
 }

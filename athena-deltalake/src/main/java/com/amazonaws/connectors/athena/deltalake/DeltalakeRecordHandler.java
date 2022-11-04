@@ -32,7 +32,12 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
-import java.util.*;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
 
 import static com.amazonaws.connectors.athena.deltalake.DeltalakeMetadataHandler.SPLIT_FILE_PROPERTY;
 import static com.amazonaws.connectors.athena.deltalake.DeltalakeMetadataHandler.SPLIT_PARTITION_VALUES_PROPERTY;
@@ -82,7 +87,8 @@ public class DeltalakeRecordHandler
      * @return A map of partition values
      * @throws JsonProcessingException
      */
-    protected Map<String, String> deserializePartitionValues(String partitionValuesJson) throws JsonProcessingException {
+    protected Map<String, String> deserializePartitionValues(String partitionValuesJson) throws JsonProcessingException
+    {
         ObjectMapper mapper = new ObjectMapper();
         JsonNode schemaJson = mapper.readTree(partitionValuesJson);
         Map<String, String> partitionValues = new HashMap<>();
@@ -100,7 +106,8 @@ public class DeltalakeRecordHandler
      */
     @Override
     protected void readWithConstraint(BlockSpiller spiller, ReadRecordsRequest recordsRequest, QueryStatusChecker queryStatusChecker)
-            throws IOException {
+            throws IOException
+    {
         logger.info("readWithConstraint: " + recordsRequest);
 
         Split split = recordsRequest.getSplit();
@@ -128,7 +135,7 @@ public class DeltalakeRecordHandler
         // Apply column pruning by reading only the requested columns
         Types.MessageTypeBuilder parquetTypeBuilder = Types.buildMessage();
 
-        for(Field field : fields) {
+        for (Field field : fields) {
             String fieldName = field.getName();
             if (partitionNames.contains(fieldName)) {
                 Object partitionValue = castPartitionValue(partitionValues.get(fieldName), field.getType());
@@ -138,12 +145,16 @@ public class DeltalakeRecordHandler
                 Extractor extractor = getExtractor(field);
                 if (extractor != null) {
                     builder.withExtractor(fieldName, extractor);
-                } else {
+                }
+                else {
                     builder.withFieldWriterFactory(fieldName, getFactory(field));
                 }
                 try {
                     parquetTypeBuilder.addField(parquetSchema.getType(fieldName));
-                } catch (InvalidRecordException ignored) {}
+                }
+                catch (InvalidRecordException exc) {
+                    logger.warn(exc.getMessage());
+                }
             }
         }
 
@@ -156,7 +167,7 @@ public class DeltalakeRecordHandler
         GeneratedRowWriter rowWriter = builder.build();
 
         Group record;
-        while((record = reader.read()) != null && queryStatusChecker.isQueryRunning()) {
+        while ((record = reader.read()) != null && queryStatusChecker.isQueryRunning()) {
             Group finalRecord = record;
             spiller.writeRows((block, rowNum) -> rowWriter.writeRow(block, rowNum, finalRecord) ? 1 : 0);
         }

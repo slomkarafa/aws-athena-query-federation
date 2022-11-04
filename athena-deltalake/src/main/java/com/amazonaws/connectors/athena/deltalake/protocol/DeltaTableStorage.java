@@ -45,37 +45,42 @@ import java.util.stream.Collectors;
 
 import static com.amazonaws.connectors.athena.deltalake.DeltalakeMetadataHandler.S3_FOLDER_DELIMITER;
 
-
 /**
  * Serves as interface between the Delta Protocol logic and the physical storage of the data.
  * Relies on AmazonS3 client to read the files.
  */
-public class DeltaTableStorage {
+public class DeltaTableStorage
+{
     Configuration parquetConf;
     AmazonS3 amazonS3;
     TableLocation tableLocation;
 
-    public DeltaTableStorage(AmazonS3 amazonS3, Configuration parquetConf, TableLocation tableLocation) {
+    public DeltaTableStorage(AmazonS3 amazonS3, Configuration parquetConf, TableLocation tableLocation)
+    {
         this.parquetConf = parquetConf;
         this.amazonS3 = amazonS3;
         this.tableLocation = tableLocation;
     }
 
-    public static class TableLocation {
+    public static class TableLocation
+    {
         String bucket;
         String tableKeyPrefix;
 
-        public TableLocation(String bucket, String tableKeyPrefix) {
+        public TableLocation(String bucket, String tableKeyPrefix)
+        {
             this.bucket = bucket;
             this.tableKeyPrefix = tableKeyPrefix;
         }
     }
 
-    private String deltaLogDirectoryKey() {
+    private String deltaLogDirectoryKey()
+    {
         return tableLocation.tableKeyPrefix + "/_delta_log";
     }
 
-    private String deltaLogDirectoryS3Url() {
+    private String deltaLogDirectoryS3Url()
+    {
         return String.format("s3a://%s/%s", tableLocation.bucket, deltaLogDirectoryKey());
     }
 
@@ -84,7 +89,8 @@ public class DeltaTableStorage {
      * @param key Full key of a S3 file
      * @return The file name, i.e without the path to the file
      */
-    private String extractFileName(String key) {
+    private String extractFileName(String key)
+    {
         String[] splitted = key.split(S3_FOLDER_DELIMITER);
         return splitted[splitted.length - 1];
     }
@@ -110,7 +116,8 @@ public class DeltaTableStorage {
      * @return A CheckpointIdentifier defined by "_last_checkpoint" file
      * @throws IOException
      */
-    public DeltaTableSnapshotBuilder.CheckpointIdentifier getLastCheckpointIdentifier() throws IOException {
+    public DeltaTableSnapshotBuilder.CheckpointIdentifier getLastCheckpointIdentifier() throws IOException
+    {
         String lastCheckpointFileKey = deltaLogDirectoryKey() + "/_last_checkpoint";
         BufferedReader lastCheckpointFile = openS3File(tableLocation.bucket, lastCheckpointFileKey);
         if (lastCheckpointFile == null) {
@@ -132,10 +139,11 @@ public class DeltaTableStorage {
      * @return Returns the Checkpoint corresponding to the content of the identified checkpoint
      * @throws IOException
      */
-    public DeltaTableSnapshotBuilder.Checkpoint getCheckpoint(DeltaTableSnapshotBuilder.CheckpointIdentifier checkpointIdentifier) throws IOException {
+    public DeltaTableSnapshotBuilder.Checkpoint getCheckpoint(DeltaTableSnapshotBuilder.CheckpointIdentifier checkpointIdentifier) throws IOException
+    {
         List<String> checkpointFiles = listCheckpointFiles(checkpointIdentifier);
         List<DeltaLogAction> deltaActions = new ArrayList<>();
-        for(String checkpointFile: checkpointFiles) {
+        for (String checkpointFile : checkpointFiles) {
             String checkpointFilePath = deltaLogDirectoryS3Url() + S3_FOLDER_DELIMITER + checkpointFile;
             ParquetReader<Group> reader = ParquetReader
                     .builder(new GroupReadSupport(), new Path(checkpointFilePath))
@@ -144,7 +152,9 @@ public class DeltaTableStorage {
             Group record;
             while ((record = reader.read()) != null) {
                 DeltaLogAction deltaAction = parseDeltaAction(record);
-                if (deltaAction != null) deltaActions.add(parseDeltaAction(record));
+                if (deltaAction != null) {
+                    deltaActions.add(parseDeltaAction(record));
+                }
             }
         }
         return new DeltaTableSnapshotBuilder.Checkpoint(checkpointFiles, deltaActions);
@@ -155,26 +165,28 @@ public class DeltaTableStorage {
      * @param checkpointIdentifier Reference to the checkpoint
      * @return The list of file names (not the full keys) corresponding to the checkpoint
      */
-    static protected List<String> listCheckpointFiles(DeltaTableSnapshotBuilder.CheckpointIdentifier checkpointIdentifier) {
+    protected static List<String> listCheckpointFiles(DeltaTableSnapshotBuilder.CheckpointIdentifier checkpointIdentifier)
+    {
         String checkpointVersion = StringUtils.leftPad(String.valueOf(checkpointIdentifier.version), 20, '0');
         List<String> result = new ArrayList<>();
         if (checkpointIdentifier.parts.isPresent()) {
             long parts = checkpointIdentifier.parts.get();
             String partTotal = StringUtils.leftPad(String.valueOf(parts), 10, '0');
-            for (long part=1 ; part<=parts ; part++) {
+            for (long part = 1; part <= parts; part++) {
                 String partNumber = StringUtils.leftPad(String.valueOf(part), 10, '0');
                 String fileName = String.format("%s.checkpoint.%s.%s.parquet", checkpointVersion, partNumber, partTotal);
                 result.add(fileName);
             }
-        } else {
+        }
+        else {
             String fileName = checkpointVersion + ".checkpoint.parquet";
             result.add(fileName);
         }
         return result;
     }
 
-
-    public List<DeltaTableSnapshotBuilder.DeltaLogEntry> listAllDeltaLogsEntries() {
+    public List<DeltaTableSnapshotBuilder.DeltaLogEntry> listAllDeltaLogsEntries()
+    {
         return listDeltaLogsEntriesAfter(null);
     }
 
@@ -183,7 +195,8 @@ public class DeltaTableStorage {
      * @param checkpoint The starting point checkpoint
      * @return A List of Delta log entries
      */
-    public List<DeltaTableSnapshotBuilder.DeltaLogEntry> listDeltaLogsEntriesAfter(DeltaTableSnapshotBuilder.Checkpoint checkpoint) {
+    public List<DeltaTableSnapshotBuilder.DeltaLogEntry> listDeltaLogsEntriesAfter(DeltaTableSnapshotBuilder.Checkpoint checkpoint)
+    {
         String startAfterName = checkpoint != null ? checkpoint.fileNames.get(checkpoint.fileNames.size() - 1) : "";
         ListObjectsV2Request listRequest = new ListObjectsV2Request()
                 .withBucketName(tableLocation.bucket)
@@ -197,7 +210,7 @@ public class DeltaTableStorage {
                 .collect(Collectors.toList());
 
         List<DeltaTableSnapshotBuilder.DeltaLogEntry> deltaLogEntries = new ArrayList<>();
-        for(String key: deltaLogsKeys) {
+        for (String key : deltaLogsKeys) {
             deltaLogEntries.add(readDeltaLog(key));
         }
         return deltaLogEntries;
@@ -208,7 +221,8 @@ public class DeltaTableStorage {
      * @param deltaLogsEntryKey The key of the Delta transaction log entry
      * @return The constructed DeltaLogEntry
      */
-    private DeltaTableSnapshotBuilder.DeltaLogEntry readDeltaLog(String deltaLogsEntryKey) {
+    private DeltaTableSnapshotBuilder.DeltaLogEntry readDeltaLog(String deltaLogsEntryKey)
+    {
         List<DeltaLogAction> deltaActions = new ArrayList<>();
         BufferedReader deltaLogsFile = openS3File(tableLocation.bucket, deltaLogsEntryKey);
         String deltaLogString;
@@ -217,9 +231,12 @@ public class DeltaTableStorage {
                 ObjectMapper mapper = new ObjectMapper();
                 JsonNode deltaLogJson = mapper.readTree(deltaLogString);
                 DeltaLogAction deltaAction = parseJsonDeltaAction(deltaLogJson);
-                if (deltaAction != null) deltaActions.add(deltaAction);
+                if (deltaAction != null) {
+                    deltaActions.add(deltaAction);
+                }
             }
-        } catch (IOException e) {
+        }
+        catch (IOException e) {
             throw new UncheckedIOException(e);
         }
         return new DeltaTableSnapshotBuilder.DeltaLogEntry(extractFileName(deltaLogsEntryKey), deltaActions);
@@ -230,12 +247,17 @@ public class DeltaTableStorage {
      * @param deltaAction Delta Action in parquet format
      * @return A DeltaLogAction
      */
-    private DeltaLogAction parseDeltaAction(Group deltaAction) {
+    private DeltaLogAction parseDeltaAction(Group deltaAction)
+    {
         if (deltaAction.getFieldRepetitionCount("add") > 0) {
             return DeltaLogAction.AddFile.fromParquet(deltaAction.getGroup("add", 0));
-        } else if (deltaAction.getFieldRepetitionCount("metaData") > 0) {
+        }
+        else if (deltaAction.getFieldRepetitionCount("metaData") > 0) {
             return DeltaLogAction.MetaData.fromParquet(deltaAction.getGroup("metaData", 0));
-        } else return null;
+        }
+        else {
+            return null;
+        }
     }
 
     /**
@@ -243,13 +265,19 @@ public class DeltaTableStorage {
      * @param deltaAction Delta Action in JSON format
      * @return A DeltaLogAction
      */
-    private DeltaLogAction parseJsonDeltaAction(JsonNode deltaAction) throws JsonProcessingException {
+    private DeltaLogAction parseJsonDeltaAction(JsonNode deltaAction) throws JsonProcessingException
+    {
         if (deltaAction.has("add")) {
             return DeltaLogAction.AddFile.fromJsonString(deltaAction.get("add").toString());
-        } else if (deltaAction.has("metaData")) {
+        }
+        else if (deltaAction.has("metaData")) {
             return DeltaLogAction.MetaData.fromJsonString(deltaAction.get("metaData").toString());
-        } else if (deltaAction.has("remove")) {
+        }
+        else if (deltaAction.has("remove")) {
             return DeltaLogAction.RemoveFile.fromJsonString(deltaAction.get("remove").toString());
-        } else return null;
+        }
+        else {
+            return null;
+        }
     }
 }

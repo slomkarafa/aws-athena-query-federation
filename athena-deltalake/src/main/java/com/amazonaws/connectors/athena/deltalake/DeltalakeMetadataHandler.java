@@ -71,21 +71,22 @@ public class DeltalakeMetadataHandler
     protected static final String ENHANCED_FILE_PATH_COLUMN = "__reserved_filePath__";
 
     private static final String SOURCE_TYPE = "deltalake";
-    public String S3_FOLDER_SUFFIX = "_$folder$";
-    public static String S3_FOLDER_DELIMITER = "/";
+    public static final String S3_FOLDER_SUFFIX = "_$folder$";
+    public static final String S3_FOLDER_DELIMITER = "/";
 
     private String dataBucket;
     private final AmazonS3 amazonS3;
 
-    private class ListFoldersResult {
+    private class ListFoldersResult
+    {
         Stream<String> listedFolders;
         String nextContinuationToken;
 
-        public ListFoldersResult(Stream<String> listedFolders, String nextContinuationToken) {
+        public ListFoldersResult(Stream<String> listedFolders, String nextContinuationToken)
+        {
             this.listedFolders = listedFolders;
             this.nextContinuationToken = nextContinuationToken;
         }
-
     }
 
     public DeltalakeMetadataHandler(String dataBucket)
@@ -115,16 +116,19 @@ public class DeltalakeMetadataHandler
      * @return A JSON string
      * @throws JsonProcessingException
      */
-    protected String serializePartitionValues(Map<String, String> partitionValues) throws JsonProcessingException {
+    protected String serializePartitionValues(Map<String, String> partitionValues) throws JsonProcessingException
+    {
         ObjectMapper objectMapper = new ObjectMapper();
         return objectMapper.writeValueAsString(partitionValues);
     }
 
-    private ListFoldersResult listFolders() {
+    private ListFoldersResult listFolders()
+    {
         return listFolders("");
     }
 
-    private ListFoldersResult listFolders(String prefix) {
+    private ListFoldersResult listFolders(String prefix)
+    {
         return listFolders(prefix, null, null);
     }
 
@@ -138,13 +142,18 @@ public class DeltalakeMetadataHandler
      * @param maxKeys Maximum number of returned folders
      * @return
      */
-    private ListFoldersResult listFolders(String prefix, String continuationToken, Integer maxKeys) {
+    private ListFoldersResult listFolders(String prefix, String continuationToken, Integer maxKeys)
+    {
         ListObjectsV2Request listObjects = new ListObjectsV2Request()
             .withPrefix(prefix)
             .withDelimiter(S3_FOLDER_DELIMITER)
             .withBucketName(dataBucket);
-        if (maxKeys != null) listObjects.withMaxKeys(maxKeys);
-        if (continuationToken != null) listObjects.withContinuationToken(continuationToken);
+        if (maxKeys != null) {
+            listObjects.withMaxKeys(maxKeys);
+        }
+        if (continuationToken != null) {
+            listObjects.withContinuationToken(continuationToken);
+        }
         ListObjectsV2Result listObjectsResult = amazonS3.listObjectsV2(listObjects);
         Stream<String> listedFolers = listObjectsResult
             .getObjectSummaries()
@@ -156,7 +165,8 @@ public class DeltalakeMetadataHandler
         return new ListFoldersResult(listedFolers, listObjectsResult.getNextContinuationToken());
     }
 
-    private String tableKeyPrefix(String schemaName, String tableName) {
+    private String tableKeyPrefix(String schemaName, String tableName)
+    {
         return schemaName + S3_FOLDER_DELIMITER + tableName;
     }
 
@@ -167,7 +177,8 @@ public class DeltalakeMetadataHandler
      * @return The current snapshot of the Delta Table reconstructed from its Transaction Log
      * @throws IOException
      */
-    private DeltaTableSnapshot getDeltaSnapshot(String schemaName, String tableName) throws IOException {
+    private DeltaTableSnapshot getDeltaSnapshot(String schemaName, String tableName) throws IOException
+    {
         DeltaTableStorage.TableLocation tableLocation = new DeltaTableStorage.TableLocation(dataBucket, tableKeyPrefix(schemaName, tableName));
         DeltaTableStorage deltaTableStorage = new DeltaTableStorage(amazonS3, new Configuration(), tableLocation);
         return new DeltaTableSnapshotBuilder(deltaTableStorage).getSnapshot();
@@ -197,11 +208,12 @@ public class DeltalakeMetadataHandler
         String schemaName = request.getSchemaName();
         String prefix = schemaName + S3_FOLDER_DELIMITER;
         Stream<String> listedFolders;
-        if(pageSize != ListTablesRequest.UNLIMITED_PAGE_SIZE_VALUE) {
+        if (pageSize != ListTablesRequest.UNLIMITED_PAGE_SIZE_VALUE) {
             ListFoldersResult listFoldersResult = listFolders(prefix, nextToken, pageSize);
             listedFolders = listFoldersResult.listedFolders;
             nextToken = listFoldersResult.nextContinuationToken;
-        } else {
+        }
+        else {
             ListFoldersResult listFoldersResult = listFolders(prefix);
             listedFolders = listFoldersResult.listedFolders;
         }
@@ -215,7 +227,8 @@ public class DeltalakeMetadataHandler
      * Retrieves the schema and the partition columns of the table by reading its Delta transaction log.
      */
     @Override
-    public GetTableResponse doGetTable(BlockAllocator allocator, GetTableRequest request) throws IOException {
+    public GetTableResponse doGetTable(BlockAllocator allocator, GetTableRequest request) throws IOException
+    {
         logger.info("doGetTable: " + request);
         String catalogName = request.getCatalogName();
         String tableName = request.getTableName().getTableName();
@@ -242,7 +255,7 @@ public class DeltalakeMetadataHandler
 
         DeltaTableSnapshot deltaTableSnapshot = getDeltaSnapshot(schemaName, tableName);
 
-        for(DeltaLogAction.AddFile file: deltaTableSnapshot.files) {
+        for (DeltaLogAction.AddFile file : deltaTableSnapshot.files) {
             Set<Map.Entry<String, String>> keyValues = file.partitionValues.entrySet();
             blockWriter.writeRows((Block block, int row) -> {
                 boolean matched = true;
@@ -265,7 +278,8 @@ public class DeltalakeMetadataHandler
      * - one for the already serialized partition values since they are provided by Delta
      */
     @Override
-    public void enhancePartitionSchema(SchemaBuilder partitionSchemaBuilder, GetTableLayoutRequest request) {
+    public void enhancePartitionSchema(SchemaBuilder partitionSchemaBuilder, GetTableLayoutRequest request)
+    {
         partitionSchemaBuilder.addStringField(ENHANCED_FILE_PATH_COLUMN);
         partitionSchemaBuilder.addStringField(ENHANCED_PARTITION_VALUES_COLUMN);
     }
@@ -278,7 +292,8 @@ public class DeltalakeMetadataHandler
      * - one for the partition values associated to the file
      */
     @Override
-    public GetSplitsResponse doGetSplits(BlockAllocator allocator, GetSplitsRequest request) {
+    public GetSplitsResponse doGetSplits(BlockAllocator allocator, GetSplitsRequest request)
+    {
         logger.info("doGetSplits: " + request);
         String catalogName = request.getCatalogName();
         Set<Split> splits = new HashSet<>();
@@ -310,12 +325,16 @@ public class DeltalakeMetadataHandler
         return new GetSplitsResponse(catalogName, splits);
     }
 
-    private int decodeContinuationToken(GetSplitsRequest request) {
-        if (request.hasContinuationToken()) return Integer.parseInt(request.getContinuationToken()) + 1;
+    private int decodeContinuationToken(GetSplitsRequest request)
+    {
+        if (request.hasContinuationToken()) {
+            return Integer.parseInt(request.getContinuationToken()) + 1;
+        }
         return 0;
     }
 
-    private String encodeContinuationToken(int partition) {
+    private String encodeContinuationToken(int partition)
+    {
         return String.valueOf(partition);
     }
 }

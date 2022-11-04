@@ -17,12 +17,10 @@
         <hadoop.version>2.9.2</hadoop.version>
     </properties>
 
-
     <dependencies>
         <dependency>
             <groupId>com.amazonaws</groupId>
             <artifactId>aws-athena-federation-sdk</artifactId>
-<!--            <version>${parent.version}-local</version>-->
             <version>${parent.version}</version>
             <exclusions>
                 <!-- replaced with jcl-over-slf4j -->
@@ -187,13 +185,6 @@
                     </execution>
                 </executions>
             </plugin>
-<!--            <plugin>-->
-<!--                <groupId>org.apache.maven.plugins</groupId>-->
-<!--                <artifactId>maven-checkstyle-plugin</artifactId>-->
-<!--                <configuration>-->
-<!--                    <skip>true</skip>-->
-<!--                </configuration>-->
-<!--            </plugin>-->
         </plugins>
     </build>
 </project>

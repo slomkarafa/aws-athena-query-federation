@@ -19,7 +19,11 @@
  */
 package com.amazonaws.connectors.athena.deltalake;
 
-import com.amazonaws.athena.connector.lambda.data.*;
+import com.amazonaws.athena.connector.lambda.data.Block;
+import com.amazonaws.athena.connector.lambda.data.BlockAllocatorImpl;
+import com.amazonaws.athena.connector.lambda.data.BlockUtils;
+import com.amazonaws.athena.connector.lambda.data.S3BlockSpillReader;
+import com.amazonaws.athena.connector.lambda.data.SchemaBuilder;
 import com.amazonaws.athena.connector.lambda.domain.Split;
 import com.amazonaws.athena.connector.lambda.domain.TableName;
 import com.amazonaws.athena.connector.lambda.domain.predicate.Constraints;
@@ -30,10 +34,12 @@ import com.amazonaws.athena.connector.lambda.records.RecordResponse;
 import com.amazonaws.auth.AWSStaticCredentialsProvider;
 import com.amazonaws.auth.AnonymousAWSCredentials;
 import com.amazonaws.client.builder.AwsClientBuilder;
+import com.amazonaws.connectors.athena.deltalake.converter.DeltaConverter;
 import com.amazonaws.services.athena.AmazonAthena;
 import com.amazonaws.services.s3.AmazonS3ClientBuilder;
 import com.amazonaws.services.secretsmanager.AWSSecretsManager;
 import org.apache.arrow.vector.types.pojo.Schema;
+import org.apache.commons.io.FileUtils;
 import org.apache.hadoop.conf.Configuration;
 import org.junit.After;
 import org.junit.Before;
@@ -43,6 +49,7 @@ import org.junit.rules.TestName;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.File;
 import java.time.LocalDate;
 import java.util.HashMap;
 import java.util.Map;
@@ -56,14 +63,10 @@ import static org.mockito.Mockito.mock;
 public class DeltalakeRecordHandlerTest extends TestBase
 {
     private static final Logger logger = LoggerFactory.getLogger(DeltalakeRecordHandlerTest.class);
-
-    private DeltalakeRecordHandler handler;
-    private BlockAllocatorImpl allocator;
-    private Schema schemaForRead;
-    private S3BlockSpillReader spillReader;
-
     @Rule
     public TestName testName = new TestName();
+    private DeltalakeRecordHandler handler;
+    private BlockAllocatorImpl allocator;
 
     @After
     public void after()
@@ -77,18 +80,7 @@ public class DeltalakeRecordHandlerTest extends TestBase
     {
         logger.info("{}: enter", testName.getMethodName());
 
-        String isValidCol = "is_valid";
-        String regionCol = "region";
-        String eventDateCol = "event_date";
         String dataBucket = "test-bucket-1";
-
-        schemaForRead = SchemaBuilder.newBuilder()
-            .addBitField(isValidCol)
-            .addStringField(regionCol)
-            .addDateDayField(eventDateCol)
-            .addIntField("amount")
-            .addDecimalField("amount_decimal", 10, 2)
-            .build();
 
         allocator = new BlockAllocatorImpl();
 
@@ -98,7 +90,10 @@ public class DeltalakeRecordHandlerTest extends TestBase
         conf.set("fs.s3a.access.key", "NO_NEED");
         conf.set("fs.s3a.secret.key", "NO_NEED");
 
-        AwsClientBuilder.EndpointConfiguration endpoint = new AwsClientBuilder.EndpointConfiguration(S3_ENDPOINT, S3_REGION);
+        AwsClientBuilder.EndpointConfiguration endpoint = new AwsClientBuilder.EndpointConfiguration(
+            S3_ENDPOINT,
+            S3_REGION
+        );
         amazonS3 = AmazonS3ClientBuilder
             .standard()
             .withPathStyleAccessEnabled(true)
@@ -110,28 +105,46 @@ public class DeltalakeRecordHandlerTest extends TestBase
             mock(AWSSecretsManager.class),
             mock(AmazonAthena.class),
             conf,
-            dataBucket);
-
-        spillReader = new S3BlockSpillReader(amazonS3, allocator);
+            dataBucket
+        );
     }
 
     @Test
-    public void doReadRecordsNoSpill()
-            throws Exception
+    public void doReadRecordsNoSpillOnSimpleExample()
+        throws Exception
     {
+        String isValidCol = "is_valid";
+        String regionCol = "region";
+        String eventDateCol = "event_date";
+
+        Schema schemaForRead = SchemaBuilder.newBuilder()
+            .addBitField(isValidCol)
+            .addStringField(regionCol)
+            .addDateDayField(eventDateCol)
+            .addIntField("amount")
+            .addDecimalField("amount_decimal", 10, 2)
+            .build();
+
         String catalogName = "catalog";
         for (int i = 0; i < 2; i++) {
             Map<String, ValueSet> constraintsMap = new HashMap<>();
             String queryId = "queryId-" + System.currentTimeMillis();
 
-            ReadRecordsRequest request = new ReadRecordsRequest(fakeIdentity(),
+            ReadRecordsRequest request = new ReadRecordsRequest(
+                fakeIdentity(),
                 catalogName,
                 queryId,
                 new TableName("test-database-2", "partitioned-table"),
                 schemaForRead,
                 Split.newBuilder(makeSpillLocation(queryId, "1234"), null)
-                    .add(SPLIT_PARTITION_VALUES_PROPERTY, "{\"is_valid\":\"true\",\"region\":\"asia\",\"event_date\":\"2020-12-21\"}")
-                    .add(SPLIT_FILE_PROPERTY, "is_valid=true/region=asia/event_date=2020-12-21/part-00000-58828e3c-041e-47b4-80dd-196ae1b1d1a6-c000.snappy.parquet")
+                    .add(
+                        SPLIT_PARTITION_VALUES_PROPERTY,
+                        "{\"is_valid\":\"true\",\"region\":\"asia\",\"event_date\":\"2020-12-21\"}"
+                    )
+                    .add(
+                        SPLIT_FILE_PROPERTY,
+                        "is_valid=true/region=asia/event_date=2020-12-21/part-00000-58828e3c-041e-47b4-80dd-196ae1b1d1a6-c000.snappy.parquet"
+                    )
                     .build(),
                 new Constraints(constraintsMap),
                 100_000_000_000L, //100GB don't expect this to spill
@@ -144,27 +157,27 @@ public class DeltalakeRecordHandlerTest extends TestBase
             ReadRecordsResponse response = (ReadRecordsResponse) rawResponse;
 
             Block expectedBlock = allocator.createBlock(schemaForRead);
-            BlockUtils.setValue(expectedBlock.getFieldVector("is_valid"), 0,  true);
-            BlockUtils.setValue(expectedBlock.getFieldVector("region"), 0,  "asia");
-            BlockUtils.setValue(expectedBlock.getFieldVector("event_date"), 0,  LocalDate.of(2020, 12, 21));
+            BlockUtils.setValue(expectedBlock.getFieldVector("is_valid"), 0, true);
+            BlockUtils.setValue(expectedBlock.getFieldVector("region"), 0, "asia");
+            BlockUtils.setValue(expectedBlock.getFieldVector("event_date"), 0, LocalDate.of(2020, 12, 21));
             BlockUtils.setValue(expectedBlock.getFieldVector("amount"), 0, 100);
             BlockUtils.setValue(expectedBlock.getFieldVector("amount_decimal"), 0, null);
 
-            BlockUtils.setValue(expectedBlock.getFieldVector("is_valid"), 0,  true);
-            BlockUtils.setValue(expectedBlock.getFieldVector("region"), 0,  "asia");
-            BlockUtils.setValue(expectedBlock.getFieldVector("event_date"), 0,  LocalDate.of(2020, 12, 21));
+            BlockUtils.setValue(expectedBlock.getFieldVector("is_valid"), 0, true);
+            BlockUtils.setValue(expectedBlock.getFieldVector("region"), 0, "asia");
+            BlockUtils.setValue(expectedBlock.getFieldVector("event_date"), 0, LocalDate.of(2020, 12, 21));
             BlockUtils.setValue(expectedBlock.getFieldVector("amount"), 0, 100);
             BlockUtils.setValue(expectedBlock.getFieldVector("amount_decimal"), 0, null);
 
-            BlockUtils.setValue(expectedBlock.getFieldVector("is_valid"), 1,  true);
-            BlockUtils.setValue(expectedBlock.getFieldVector("region"), 1,  "asia");
-            BlockUtils.setValue(expectedBlock.getFieldVector("event_date"), 1,  LocalDate.of(2020, 12, 21));
+            BlockUtils.setValue(expectedBlock.getFieldVector("is_valid"), 1, true);
+            BlockUtils.setValue(expectedBlock.getFieldVector("region"), 1, "asia");
+            BlockUtils.setValue(expectedBlock.getFieldVector("event_date"), 1, LocalDate.of(2020, 12, 21));
             BlockUtils.setValue(expectedBlock.getFieldVector("amount"), 1, 200);
             BlockUtils.setValue(expectedBlock.getFieldVector("amount_decimal"), 1, null);
 
-            BlockUtils.setValue(expectedBlock.getFieldVector("is_valid"), 2,  true);
-            BlockUtils.setValue(expectedBlock.getFieldVector("region"), 2,  "asia");
-            BlockUtils.setValue(expectedBlock.getFieldVector("event_date"), 2,  LocalDate.of(2020, 12, 21));
+            BlockUtils.setValue(expectedBlock.getFieldVector("is_valid"), 2, true);
+            BlockUtils.setValue(expectedBlock.getFieldVector("region"), 2, "asia");
+            BlockUtils.setValue(expectedBlock.getFieldVector("event_date"), 2, LocalDate.of(2020, 12, 21));
             BlockUtils.setValue(expectedBlock.getFieldVector("amount"), 2, 350);
             BlockUtils.setValue(expectedBlock.getFieldVector("amount_decimal"), 2, null);
 
@@ -174,6 +187,52 @@ public class DeltalakeRecordHandlerTest extends TestBase
 
             assertEquals(3, response.getRecords().getRowCount());
             assertEquals(expectedResponse, response);
+        }
+    }
+
+    @Test
+    public void doReadRecordsNoSpillOnComplexExample()
+        throws Exception
+    {
+        File schemaStringFile = new File(getClass().getClassLoader()
+            .getResource("complex_table_schema.json")
+            .getFile());
+        String schemaString = FileUtils.readFileToString(schemaStringFile, "UTF-8");
+        Schema schemaForRead = DeltaConverter.getArrowSchema(schemaString);
+        String catalogName = "catalog";
+        for (int i = 0; i < 2; i++) {
+            Map<String, ValueSet> constraintsMap = new HashMap<>();
+            String queryId = "queryId-" + System.currentTimeMillis();
+
+            ReadRecordsRequest request = new ReadRecordsRequest(
+                fakeIdentity(),
+                catalogName,
+                queryId,
+                new TableName("test-database-2", "complex-table"),
+                schemaForRead,
+                Split.newBuilder(makeSpillLocation(queryId, "1234"), null)
+                    .add(SPLIT_PARTITION_VALUES_PROPERTY, "{\"tenant\":\"testTenant0\"}")
+                    .add(
+                        SPLIT_FILE_PROPERTY,
+                        "tenant=testTenant0/part-00000-5f547a1b-4a97-45f5-a658-55ab320707ae.c000.snappy.parquet"
+                    )
+                    .build(),
+                new Constraints(constraintsMap),
+                100_000_000_000L, //100GB don't expect this to spill
+                100_000_000_000L
+            );
+
+            RecordResponse rawResponse = handler.doReadRecords(allocator, request);
+            assertTrue(rawResponse instanceof ReadRecordsResponse);
+
+            ReadRecordsResponse response = (ReadRecordsResponse) rawResponse;
+
+            String expectedRow0 = "[tenant : testTenant0], [testArrayString : {foo,bar}], [testArrayInt : {0,1,2,3}], [testMapString : {[key : foo],[value : bar]}{[key : foo1],[value : bar1]}], [testStruct : {[name : foobar],[id : 0]}], [complexStruct : {[testStruct : {[name : foobar],[id : 4]}],[testArray : {foo,bar}],[testMap : {[key : foo],[value : bar]}{[key : foo1],[value : bar1]}]}], [arrayOfIntArrays : {{0,1,2},{2,3,4}}], [arrayOfStructs : {{[name : foobar],[id : 1]},{[name : foobar1],[id : 2]}}], [arrayOfMaps : {{[key : foo],[value : bar]}{[key : foo1],[value : bar1]},{[key : foo1],[value : bar1]}{[key : foo2],[value : bar3]}}], [mapWithMaps : {[key : boo],[value : {[key : foo],[value : bar]}{[key : foo1],[value : bar1]}]}], [mapWithStructs : {[key : boo],[value : {[name : foobar],[id : 3]}]}], [mapWithArrays : {[key : boo],[value : {foo,bar}]}]";
+            String expectedRow1 = "[tenant : testTenant0], [testArrayString : {foo,zar}], [testArrayInt : {0,1,2,3,4}], [testMapString : {[key : foo],[value : zar]}{[key : foo1],[value : zar1]}], [testStruct : {[name : foozar],[id : 10]}], [complexStruct : {[testStruct : {[name : foozar],[id : 14]}],[testArray : {foo,zar}],[testMap : {[key : foo],[value : zar]}{[key : foo1],[value : zar1]}]}], [arrayOfIntArrays : {{10,11,12},{12,13,14}}], [arrayOfStructs : {{[name : foozar],[id : 11]},{[name : foozar1],[id : 12]}}], [arrayOfMaps : {{[key : foo],[value : zar]}{[key : foo1],[value : zar1]},{[key : foo1],[value : zar1]}{[key : foo2],[value : zar3]}}], [mapWithMaps : {[key : boo],[value : {[key : foo],[value : zar]}{[key : foo1],[value : zar1]}]}], [mapWithStructs : {[key : boo],[value : {[name : foozar],[id : 13]}]}], [mapWithArrays : {[key : boo],[value : {foo,zar}]}]";
+
+            assertEquals(expectedRow0, BlockUtils.rowToString(response.getRecords(), 0));
+            assertEquals(expectedRow1, BlockUtils.rowToString(response.getRecords(), 1));
+            assertEquals(2, response.getRecords().getRowCount());
         }
     }
 }
