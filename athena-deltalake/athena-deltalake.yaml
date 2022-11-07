@@ -10,7 +10,7 @@ Metadata:
     ReadmeUrl: README.md
     Labels: ['athena-federation']
     HomePageUrl: https://github.com/awslabs/aws-athena-query-federation
-    SemanticVersion: 2021.22.32
+    SemanticVersion: 2022.42.2
     SourceCodeUrl: https://github.com/awslabs/aws-athena-query-federation
 
 Parameters:
@@ -40,6 +40,9 @@ Parameters:
     Description: "WARNING: If set to 'true' encryption for spilled data is disabled."
     Default: "false"
     Type: String
+  LambdaRole:
+    Description: "A custom role for reading from DataBucket and writing to SpillBucket"
+    Type: String
 
 Resources:
   ConnectorConfig:
@@ -54,10 +57,9 @@ Resources:
           data_bucket: !Ref DataBucket
       FunctionName: !Sub "${AthenaCatalogName}"
       Handler: "com.amazonaws.connectors.athena.deltalake.DeltalakeCompositeHandler"
-      CodeUri: "./target/athena-deltalake-2022.39.1.jar"
+      CodeUri: "./target/athena-deltalake-2022.42.2.jar"
       Description: "Enables Amazon Athena to query Delta Lake tables stored in S3."
       Runtime: java11
       Timeout: !Ref LambdaTimeout
       MemorySize: !Ref LambdaMemory
-      Role: arn:aws:iam::400535189829:role/rafalslo-event-deltalake-query-federation
-#        Role: arn:aws:iam::400535189829:role/op-dev-app-athena-deltalake-query-federation
+      Role: !Ref LambdaRole
