@@ -19,7 +19,6 @@
  */
 package com.amazonaws.connectors.athena.deltalake;
 
-import com.amazonaws.ClientConfiguration;
 import com.amazonaws.athena.connector.lambda.QueryStatusChecker;
 import com.amazonaws.athena.connector.lambda.data.BlockSpiller;
 import com.amazonaws.athena.connector.lambda.data.writers.GeneratedRowWriter;
